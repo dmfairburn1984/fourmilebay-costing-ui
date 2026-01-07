@@ -37,8 +37,8 @@ function App() {
   }, []);
 
   const checkConnection = async () => {
-    if (API_URL === 'https://script.google.com/a/macros/fourmilebay.com/s/AKfycbxue-k99jGzxbHPnS2Mq1uKB5OASkFSRWjFxSO4aJy1dXjgyVRzQP7aXgCOBjN7lrM6ZQ/exec') {
-      setIsConnected(false);
+    if (API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {
+    setIsConnected(false);
       setIsLoading(false);
       return;
     }
