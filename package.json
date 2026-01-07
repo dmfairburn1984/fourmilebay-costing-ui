@@ -1,13 +1,13 @@
 {
   "name": "fourmilbay-costing-ui",
   "version": "1.0.0",
-  "description": "FourMileBay Manufacturing Intelligence System - Cost Calculator UI",
+  "description": "FourMileBay Manufacturing Intelligence System",
   "private": true,
   "scripts": {
-    "start": "react-scripts start",
+    "start": "node server.js",
     "build": "react-scripts build",
+    "dev": "react-scripts start",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
     "heroku-postbuild": "npm run build"
   },
   "dependencies": {
@@ -16,12 +16,8 @@
     "react-scripts": "5.0.1",
     "react-router-dom": "^6.20.0",
     "axios": "^1.6.0",
-    "lucide-react": "^0.294.0"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.3.0",
-    "autoprefixer": "^10.4.0",
-    "postcss": "^8.4.0"
+    "lucide-react": "^0.294.0",
+    "express": "^4.18.2"
   },
   "engines": {
     "node": "18.x",
