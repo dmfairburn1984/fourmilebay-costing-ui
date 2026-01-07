@@ -36,17 +36,30 @@ function App() {
     checkConnection();
   }, []);
 
-  const checkConnection = async () => {
+const checkConnection = async () => {
     if (API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {
-    setIsConnected(false);
+      setIsConnected(false);
       setIsLoading(false);
       return;
     }
     
     try {
-      const response = await fetch(`${API_URL}?action=getStats`);
-      if (response.ok) {
+      const response = await fetch(API_URL + '?action=getStats', {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      const data = await response.json();
+      console.log('API Response:', data);
+      
+      if (data.success) {
         setIsConnected(true);
+      } else {
+        console.error('API returned error:', data);
+        setIsConnected(false);
       }
     } catch (error) {
       console.error('Connection error:', error);
