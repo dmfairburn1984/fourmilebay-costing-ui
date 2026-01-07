@@ -432,7 +432,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setComponents(components.filter(comp => comp.id !== id));
   };
 
-  const handleSubmit = async () => {
+const handleSubmit = async () => {
     if (!productName) {
       alert('Please enter a product name');
       return;
@@ -450,32 +450,36 @@ function BOMCreator({ apiUrl, isConnected }) {
     setResult(null);
 
     try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'processBOM',
-          productName,
-          productType,
-          mainMaterial,
-          complexity: parseInt(complexity),
-          packaging: {
-            length: parseFloat(packaging.length) || 0,
-            width: parseFloat(packaging.width) || 0,
-            height: parseFloat(packaging.height) || 0
-          },
-          components: components.map(comp => ({
-            mainComponent: comp.mainComponent,
-            subComponent: comp.subComponent,
-            partName: comp.partName,
-            profile: comp.profile,
-            length: parseFloat(comp.length) || 0,
-            width: parseFloat(comp.width) || 0,
-            thickness: parseFloat(comp.thickness) || 0,
-            qty: parseFloat(comp.qty) || 1,
-            volumeM3: parseFloat(comp.volumeM3) || 0
-          }))
-        })
+      // Encode data as URL parameter to avoid CORS issues with POST
+      const payload = {
+        action: 'processBOM',
+        productName,
+        productType,
+        mainMaterial,
+        complexity: parseInt(complexity),
+        packaging: {
+          length: parseFloat(packaging.length) || 0,
+          width: parseFloat(packaging.width) || 0,
+          height: parseFloat(packaging.height) || 0
+        },
+        components: components.map(comp => ({
+          mainComponent: comp.mainComponent,
+          subComponent: comp.subComponent,
+          partName: comp.partName,
+          profile: comp.profile,
+          length: parseFloat(comp.length) || 0,
+          width: parseFloat(comp.width) || 0,
+          thickness: parseFloat(comp.thickness) || 0,
+          qty: parseFloat(comp.qty) || 1,
+          volumeM3: parseFloat(comp.volumeM3) || 0
+        }))
+      };
+
+      // Use GET with encoded data to bypass CORS
+      const encodedData = encodeURIComponent(JSON.stringify(payload));
+      const response = await fetch(`${apiUrl}?action=processBOM&data=${encodedData}`, {
+        method: 'GET',
+        redirect: 'follow'
       });
 
       const data = await response.json();
