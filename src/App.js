@@ -367,6 +367,15 @@ function StatCard({ icon, value, label, color, loading }) {
   );
 }
 
+// ============================================
+// ENHANCED BOM CREATOR - COMPLETE CORRECTED VERSION
+// Version 1.1 - With ALL BOM Fields
+// ============================================
+// This replaces the existing BOMCreator component in App.js
+// Includes: M, M2, M3, Weight, Total Weight, Density, Note
+// ============================================
+
+// BOM Creator Component - ENHANCED WITH ALL FIELDS
 function BOMCreator({ apiUrl, isConnected }) {
   // Product Information State
   const [productName, setProductName] = useState('');
@@ -384,10 +393,9 @@ function BOMCreator({ apiUrl, isConnected }) {
   const [partNamesByType, setPartNamesByType] = useState({});
   const [hardwareLibrary, setHardwareLibrary] = useState([]);
   const [fabricReferences, setFabricReferences] = useState([]);
-  const [existingProducts, setExistingProducts] = useState([]);
   
   // UI State
-  const [activeTab, setActiveTab] = useState('manual'); // 'manual', 'upload', 'clone'
+  const [activeTab, setActiveTab] = useState('manual');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [similarMatches, setSimilarMatches] = useState({});
@@ -406,7 +414,6 @@ function BOMCreator({ apiUrl, isConnected }) {
 
   const mainMaterials = ['Aluminum', 'Wood', 'Aluminum + Wood', 'Aluminum + Rope', 'Wood + Rope', 'Aluminum + Textilene'];
   
-  // Enhanced Sub-Component options with normalized keys
   const subComponentOptions = [
     { value: 'ALUMINUM', label: 'Aluminum', category: 'metal' },
     { value: 'TEAK', label: 'Teak', category: 'wood' },
@@ -434,7 +441,6 @@ function BOMCreator({ apiUrl, isConnected }) {
   const loadAllLibraries = async () => {
     setLoading(true);
     try {
-      // Load all libraries in parallel
       const [profilesRes, mainCompRes, partNamesRes, hardwareRes, fabricRes] = await Promise.all([
         fetch(`${apiUrl}?action=getProfiles`).then(r => r.json()),
         fetch(`${apiUrl}?action=getMainComponents`).then(r => r.json()),
@@ -479,25 +485,29 @@ function BOMCreator({ apiUrl, isConnected }) {
       const data = await res.json();
       
       if (data.success) {
-        // Populate form with cloned data
         setProductName(data.product.name + ' (Copy)');
         setProductType(data.product.type);
         setMainMaterial(data.product.mainMaterial);
         setComplexity(String(data.product.complexity || 3));
         
-        // Convert components
         const clonedComponents = data.components.map((comp, idx) => ({
           id: Date.now() + idx,
-          mainComponent: comp.mainComponent,
+          mainComponent: comp.mainComponent || '',
           subComponent: normalizeSubComponentValue(comp.subComponent),
-          partName: comp.partName,
-          profile: '',
-          length: '',
-          width: '',
-          thickness: '',
+          partName: comp.partName || '',
+          profile: comp.profile || '',
+          length: String(comp.length || ''),
+          width: String(comp.width || ''),
+          thickness: String(comp.thickness || ''),
           qty: String(comp.quantity || 1),
-          volumeM3: '',
-          componentId: comp.componentId,
+          m: String(comp.m || ''),
+          m2: String(comp.m2 || ''),
+          m3: String(comp.m3 || ''),
+          weight: String(comp.weight || ''),
+          totalWeight: String(comp.totalWeight || ''),
+          density: String(comp.density || ''),
+          note: String(comp.note || ''),
+          componentId: comp.componentId || '',
           isCloned: true
         }));
         
@@ -512,7 +522,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     }
   };
 
-  // Normalize sub-component values from BOM data
+  // Normalize sub-component values
   const normalizeSubComponentValue = (value) => {
     const upper = String(value).toUpperCase();
     if (upper.includes('TEAK')) return 'TEAK';
@@ -527,7 +537,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     if (upper.includes('ACCESOIRE') || upper.includes('ACCESSOR')) return 'ACCESSORIES';
     if (upper.includes('ROPE')) return 'ROPE';
     if (upper.includes('TEXTILENE') || upper.includes('BATYLINE')) return 'TEXTILENE';
-    return 'HARDWARE'; // Default fallback
+    return 'HARDWARE';
   };
 
   // Check for similar existing components
@@ -535,7 +545,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     if (!length || !width) return;
     
     const isWoodOrMetal = ['TEAK', 'ACACIA', 'EUCALYPTUS', 'KAMERERE', 'ALUMINUM'].includes(subComponent);
-    if (!isWoodOrMetal) return; // Only check for wood/metal components
+    if (!isWoodOrMetal) return;
     
     try {
       const params = { subComponent, length, width, thickness: thickness || 0, tolerance: 10 };
@@ -557,7 +567,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     }
   };
 
-  // Add new component row
+  // Add new component - WITH ALL FIELDS
   const addComponent = () => {
     setComponents([...components, {
       id: Date.now(),
@@ -569,16 +579,19 @@ function BOMCreator({ apiUrl, isConnected }) {
       width: '',
       thickness: '',
       qty: '1',
-      volumeM3: '',
       m: '',
       m2: '',
-      fabricRef: '',
+      m3: '',
+      weight: '',
+      totalWeight: '',
+      density: '',
       note: '',
+      fabricRef: '',
       isConfirmedNew: false
     }]);
   };
 
-  // Add hardware component (simplified)
+  // Add hardware component
   const addHardwareComponent = () => {
     setComponents([...components, {
       id: Date.now(),
@@ -590,7 +603,13 @@ function BOMCreator({ apiUrl, isConnected }) {
       width: '',
       thickness: '',
       qty: '1',
-      volumeM3: '',
+      m: '',
+      m2: '',
+      m3: '',
+      weight: '',
+      totalWeight: '',
+      density: '',
+      note: '',
       isHardware: true
     }]);
   };
@@ -602,14 +621,12 @@ function BOMCreator({ apiUrl, isConnected }) {
       
       const updated = { ...comp, [field]: value };
       
-      // Auto-check for similar components when dimensions change
       if (['length', 'width', 'thickness', 'subComponent'].includes(field)) {
         const l = field === 'length' ? value : comp.length;
         const w = field === 'width' ? value : comp.width;
         const t = field === 'thickness' ? value : comp.thickness;
         const sub = field === 'subComponent' ? value : comp.subComponent;
         
-        // Debounce the check
         clearTimeout(updated.checkTimeout);
         updated.checkTimeout = setTimeout(() => {
           checkSimilarComponents(id, sub, l, w, t);
@@ -620,7 +637,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     }));
   };
 
-  // Use existing component (from similar match)
+  // Use existing component
   const useExistingComponent = (compId, existingComp) => {
     setComponents(components.map(comp => {
       if (comp.id !== compId) return comp;
@@ -642,7 +659,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setShowSimilarModal(null);
   };
 
-  // Confirm creating new component (ignoring similar matches)
+  // Confirm creating new component
   const confirmNewComponent = (compId) => {
     setComponents(components.map(comp => {
       if (comp.id !== compId) return comp;
@@ -673,7 +690,6 @@ function BOMCreator({ apiUrl, isConnected }) {
     
     setUploadFile(file);
     
-    // Parse Excel file using SheetJS (included via CDN in index.html)
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -683,7 +699,6 @@ function BOMCreator({ apiUrl, isConnected }) {
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         
-        // Find header row
         let headerRowIdx = 0;
         for (let i = 0; i < Math.min(5, jsonData.length); i++) {
           const row = jsonData[i];
@@ -693,7 +708,6 @@ function BOMCreator({ apiUrl, isConnected }) {
           }
         }
         
-        // Parse components
         const parsedComponents = [];
         for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
@@ -701,22 +715,24 @@ function BOMCreator({ apiUrl, isConnected }) {
           
           parsedComponents.push({
             id: Date.now() + i,
-            mainComponent: String(row[0] || '').toUpperCase(),
+            mainComponent: String(row[0] || '').toUpperCase().trim(),
             subComponent: normalizeSubComponentValue(row[1] || ''),
-            partName: String(row[2] || '').toUpperCase(),
-            profile: String(row[3] || ''),
+            partName: String(row[2] || '').toUpperCase().trim(),
+            profile: String(row[3] || '').trim(),
             length: String(row[4] || ''),
             width: String(row[5] || ''),
             thickness: String(row[6] || ''),
             qty: String(row[7] || 1),
             m: String(row[8] || ''),
             m2: String(row[9] || ''),
-            volumeM3: String(row[10] || ''),
+            m3: String(row[10] || ''),
+            weight: String(row[11] || ''),
+            totalWeight: String(row[12] || ''),
+            density: String(row[13] || ''),
             note: String(row[14] || '')
           });
         }
         
-        // Extract product name from filename
         const fileName = file.name.replace(/^BOM_/, '').replace(/\.xlsx?$/i, '').replace(/_/g, ' ');
         
         setUploadPreview({
@@ -745,7 +761,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setUploadFile(null);
   };
 
-  // Submit BOM
+  // Submit BOM - WITH ALL FIELDS
   const handleSubmit = async () => {
     if (!productName) {
       alert('Please enter a product name');
@@ -760,7 +776,6 @@ function BOMCreator({ apiUrl, isConnected }) {
       return;
     }
     
-    // Check for unresolved similar matches
     const unresolvedMatches = Object.keys(similarMatches).filter(id => 
       !components.find(c => c.id === parseInt(id))?.isConfirmedNew
     );
@@ -788,17 +803,20 @@ function BOMCreator({ apiUrl, isConnected }) {
           mainComponent: comp.mainComponent.toUpperCase(),
           subComponent: comp.subComponent,
           partName: comp.partName.toUpperCase(),
-          profile: comp.profile,
+          profile: comp.profile || '',
           length: parseFloat(comp.length) || 0,
           width: parseFloat(comp.width) || 0,
           thickness: parseFloat(comp.thickness) || 0,
           qty: parseFloat(comp.qty) || 1,
-          volumeM3: parseFloat(comp.volumeM3) || 0,
           m: parseFloat(comp.m) || 0,
           m2: parseFloat(comp.m2) || 0,
+          m3: parseFloat(comp.m3) || 0,
+          weight: parseFloat(comp.weight) || 0,
+          totalWeight: parseFloat(comp.totalWeight) || 0,
+          density: comp.density || '',
+          note: comp.note || '',
           componentId: comp.componentId || '',
-          fabricRef: comp.fabricRef || '',
-          note: comp.note || ''
+          fabricRef: comp.fabricRef || ''
         }))
       };
 
@@ -812,7 +830,6 @@ function BOMCreator({ apiUrl, isConnected }) {
       
       if (data.success) {
         setResult(data);
-        // Reload libraries to include new components
         loadAllLibraries();
       } else {
         alert('Error: ' + (data.error || 'Failed to process BOM'));
@@ -839,7 +856,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setUploadFile(null);
   };
 
-  // Get part name suggestions for current sub-component
+  // Get part name suggestions
   const getPartNameSuggestions = (subComponent) => {
     return partNamesByType[subComponent] || [];
   };
@@ -853,14 +870,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     if (comp?.isConfirmedNew || comp?.isExisting) return null;
 
     return (
-      <div style={{
-        background: '#fff3cd',
-        border: '1px solid #ffc107',
-        borderRadius: '4px',
-        padding: '8px 12px',
-        marginTop: '4px',
-        fontSize: '12px'
-      }}>
+      <div className="similar-warning">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <AlertTriangle size={14} color="#856404" />
           <span style={{ color: '#856404', fontWeight: '500' }}>
@@ -894,27 +904,8 @@ function BOMCreator({ apiUrl, isConnected }) {
     if (!matches || !comp) return null;
 
     return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000
-      }}>
-        <div style={{
-          background: 'white',
-          borderRadius: '12px',
-          padding: '24px',
-          maxWidth: '600px',
-          width: '90%',
-          maxHeight: '80vh',
-          overflow: 'auto'
-        }}>
+      <div className="modal-overlay">
+        <div className="modal-content">
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertTriangle color="#856404" />
             Similar Components Found
@@ -960,10 +951,7 @@ function BOMCreator({ apiUrl, isConnected }) {
           </div>
           
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: '16px' }}>
-            <button
-              onClick={() => setShowSimilarModal(null)}
-              className="btn btn-secondary"
-            >
+            <button onClick={() => setShowSimilarModal(null)} className="btn btn-secondary">
               Cancel
             </button>
             <button
@@ -994,8 +982,7 @@ function BOMCreator({ apiUrl, isConnected }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '600', margin: 0 }}>BOM Creator</h2>
         
-        {/* Tab Buttons */}
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="tab-buttons">
           <button
             className={`btn ${activeTab === 'manual' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setActiveTab('manual')}
@@ -1062,7 +1049,7 @@ function BOMCreator({ apiUrl, isConnected }) {
             <h3 className="card-title">Clone Existing Product</h3>
           </div>
           <p style={{ color: '#666', marginBottom: '16px' }}>
-            Search for an existing product to use as a template. All components will be copied.
+            Search for an existing product to use as a template.
           </p>
           <div className="form-group">
             <label className="form-label">Search Products</label>
@@ -1080,32 +1067,15 @@ function BOMCreator({ apiUrl, isConnected }) {
           
           {searchResults.length > 0 && (
             <div style={{ marginTop: '16px' }}>
-              <p style={{ fontWeight: '500', marginBottom: '8px' }}>
-                Found {searchResults.length} products:
-              </p>
               {searchResults.map(product => (
-                <div
-                  key={product.code}
-                  style={{
-                    padding: '12px',
-                    border: '1px solid #ddd',
-                    borderRadius: '8px',
-                    marginBottom: '8px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}
-                >
+                <div key={product.code} className="search-result">
                   <div>
                     <div style={{ fontWeight: '500' }}>{product.name}</div>
                     <div style={{ fontSize: '12px', color: '#666' }}>
-                      {product.code} • {product.type} • {product.componentCount} components • ${product.totalCost.toFixed(2)}
+                      {product.code} • {product.type} • {product.componentCount} components
                     </div>
                   </div>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => cloneProduct(product.code)}
-                  >
+                  <button className="btn btn-primary" onClick={() => cloneProduct(product.code)}>
                     Clone
                   </button>
                 </div>
@@ -1122,16 +1092,10 @@ function BOMCreator({ apiUrl, isConnected }) {
             <h3 className="card-title">Upload Excel BOM</h3>
           </div>
           <p style={{ color: '#666', marginBottom: '16px' }}>
-            Upload a factory BOM Excel file. The file should have columns: MAIN COMPONENT, SUB COMPONENT, PART NAME, PROFILE, L, W, THICKNESS, QTY, M, M2, M3, etc.
+            Upload a factory BOM Excel file with columns: MAIN COMPONENT, SUB COMPONENT, PART NAME, PROFILE, L, W, THICKNESS, QTY, M, M2, M3, WEIGHT, TOTAL WEIGHT, DENSITY, NOTE
           </p>
           
-          <div style={{
-            border: '2px dashed #ddd',
-            borderRadius: '8px',
-            padding: '40px',
-            textAlign: 'center',
-            marginBottom: '16px'
-          }}>
+          <div className="upload-zone">
             <input
               type="file"
               accept=".xlsx,.xls"
@@ -1142,19 +1106,19 @@ function BOMCreator({ apiUrl, isConnected }) {
             <label htmlFor="bom-upload" style={{ cursor: 'pointer' }}>
               <Upload size={48} style={{ color: '#999', marginBottom: '12px' }} />
               <p style={{ color: '#666' }}>
-                {uploadFile ? uploadFile.name : 'Click to select or drag Excel file here'}
+                {uploadFile ? uploadFile.name : 'Click to select Excel file'}
               </p>
             </label>
           </div>
           
           {uploadPreview && (
-            <div style={{ background: '#f8f9fa', padding: '16px', borderRadius: '8px' }}>
+            <div style={{ background: '#f8f9fa', padding: '16px', borderRadius: '8px', marginTop: '16px' }}>
               <h4 style={{ marginTop: 0 }}>Preview: {uploadPreview.fileName}</h4>
               <p>Product Name: <strong>{uploadPreview.productName}</strong></p>
               <p>Components Found: <strong>{uploadPreview.componentCount}</strong></p>
               
-              <div style={{ maxHeight: '200px', overflow: 'auto', marginTop: '12px' }}>
-                <table className="data-table" style={{ fontSize: '12px' }}>
+              <div className="preview-table" style={{ marginTop: '12px' }}>
+                <table className="data-table" style={{ fontSize: '11px' }}>
                   <thead>
                     <tr>
                       <th>Main</th>
@@ -1165,6 +1129,9 @@ function BOMCreator({ apiUrl, isConnected }) {
                       <th>W</th>
                       <th>T</th>
                       <th>Qty</th>
+                      <th>M</th>
+                      <th>M²</th>
+                      <th>M³</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1178,15 +1145,11 @@ function BOMCreator({ apiUrl, isConnected }) {
                         <td>{comp.width}</td>
                         <td>{comp.thickness}</td>
                         <td>{comp.qty}</td>
+                        <td>{comp.m}</td>
+                        <td>{comp.m2}</td>
+                        <td>{comp.m3}</td>
                       </tr>
                     ))}
-                    {uploadPreview.components.length > 10 && (
-                      <tr>
-                        <td colSpan="8" style={{ textAlign: 'center', color: '#666' }}>
-                          ... and {uploadPreview.components.length - 10} more
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -1269,7 +1232,7 @@ function BOMCreator({ apiUrl, isConnected }) {
             </div>
           </div>
 
-          {/* Component Entry */}
+          {/* Component Entry - WITH ALL FIELDS */}
           <div className="card">
             <div className="card-header">
               <h3 className="card-title">BOM Components ({components.length})</h3>
@@ -1296,17 +1259,12 @@ function BOMCreator({ apiUrl, isConnected }) {
                 {components.map((comp, index) => (
                   <div 
                     key={comp.id} 
-                    style={{
-                      padding: '16px',
-                      borderBottom: index < components.length - 1 ? '1px solid #eee' : 'none',
-                      background: similarMatches[comp.id] && !comp.isConfirmedNew && !comp.isExisting ? '#fffef0' : 'transparent'
-                    }}
+                    className={`bom-row ${similarMatches[comp.id] && !comp.isConfirmedNew && !comp.isExisting ? 'bom-row-warning' : ''}`}
                   >
-                    {/* Row 1: Main fields */}
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                      {/* Main Component - Autocomplete */}
-                      <div className="form-group" style={{ minWidth: '140px', flex: '1' }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Main Component</label>
+                    {/* Row 1: Core fields */}
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
+                      <div className="form-group" style={{ minWidth: '130px', flex: '1', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '11px' }}>Main Component *</label>
                         <input
                           type="text"
                           className="form-input"
@@ -1316,15 +1274,12 @@ function BOMCreator({ apiUrl, isConnected }) {
                           onChange={(e) => updateComponent(comp.id, 'mainComponent', e.target.value.toUpperCase())}
                         />
                         <datalist id={`main-comp-${comp.id}`}>
-                          {mainComponentOptions.map(mc => (
-                            <option key={mc} value={mc} />
-                          ))}
+                          {mainComponentOptions.map(mc => <option key={mc} value={mc} />)}
                         </datalist>
                       </div>
                       
-                      {/* Sub Component - Dropdown */}
-                      <div className="form-group" style={{ minWidth: '130px' }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Sub Component</label>
+                      <div className="form-group" style={{ minWidth: '120px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '11px' }}>Sub Component *</label>
                         <select
                           className="form-select"
                           value={comp.subComponent}
@@ -1336,144 +1291,136 @@ function BOMCreator({ apiUrl, isConnected }) {
                         </select>
                       </div>
                       
-                      {/* Part Name - Autocomplete */}
-                      <div className="form-group" style={{ minWidth: '150px', flex: '1' }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Part Name</label>
+                      <div className="form-group" style={{ minWidth: '140px', flex: '1', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '11px' }}>Part Name *</label>
                         <input
                           type="text"
                           className="form-input"
                           list={`part-name-${comp.id}`}
-                          placeholder={comp.isHardware ? "e.g., SCREW FAB" : "e.g., SLAT 1"}
+                          placeholder="e.g., SLAT 1"
                           value={comp.partName}
                           onChange={(e) => updateComponent(comp.id, 'partName', e.target.value.toUpperCase())}
                         />
                         <datalist id={`part-name-${comp.id}`}>
-                          {getPartNameSuggestions(comp.subComponent).map(pn => (
-                            <option key={pn} value={pn} />
-                          ))}
+                          {getPartNameSuggestions(comp.subComponent).map(pn => <option key={pn} value={pn} />)}
                         </datalist>
                       </div>
                       
-                      {/* Profile - for Aluminum or Hardware */}
-                      {(comp.subComponent === 'ALUMINUM' || comp.subComponent === 'HARDWARE') && (
-                        <div className="form-group" style={{ minWidth: '100px' }}>
-                          <label className="form-label" style={{ fontSize: '11px' }}>Profile</label>
-                          {comp.subComponent === 'ALUMINUM' ? (
-                            <select
-                              className="form-select"
-                              value={comp.profile}
-                              onChange={(e) => updateComponent(comp.id, 'profile', e.target.value)}
-                            >
-                              <option value="">Select...</option>
-                              {profiles.map(p => (
-                                <option key={p.id} value={`${p.width}x${p.height}`}>
-                                  {p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`}
-                                </option>
-                              ))}
-                              <option value="PLATE 3 MM">PLATE 3MM</option>
-                            </select>
-                          ) : (
-                            <input
-                              type="text"
-                              className="form-input"
-                              placeholder="e.g., M6x20"
-                              value={comp.profile}
-                              onChange={(e) => updateComponent(comp.id, 'profile', e.target.value)}
-                            />
-                          )}
-                        </div>
-                      )}
-                      
-                      {/* Dimensions - hide for hardware */}
-                      {comp.subComponent !== 'HARDWARE' && comp.subComponent !== 'ACCESSORIES' && (
-                        <>
-                          <div className="form-group" style={{ width: '70px' }}>
-                            <label className="form-label" style={{ fontSize: '11px' }}>L (mm)</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={comp.length}
-                              onChange={(e) => updateComponent(comp.id, 'length', e.target.value)}
-                            />
-                          </div>
-                          <div className="form-group" style={{ width: '70px' }}>
-                            <label className="form-label" style={{ fontSize: '11px' }}>W (mm)</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={comp.width}
-                              onChange={(e) => updateComponent(comp.id, 'width', e.target.value)}
-                            />
-                          </div>
-                          <div className="form-group" style={{ width: '60px' }}>
-                            <label className="form-label" style={{ fontSize: '11px' }}>T (mm)</label>
-                            <input
-                              type="number"
-                              className="form-input"
-                              value={comp.thickness}
-                              onChange={(e) => updateComponent(comp.id, 'thickness', e.target.value)}
-                            />
-                          </div>
-                        </>
-                      )}
-                      
-                      {/* Quantity */}
-                      <div className="form-group" style={{ width: '60px' }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Qty</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={comp.qty}
-                          min="1"
-                          onChange={(e) => updateComponent(comp.id, 'qty', e.target.value)}
-                        />
+                      <div className="form-group" style={{ width: '90px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '11px' }}>Profile</label>
+                        {comp.subComponent === 'ALUMINUM' ? (
+                          <select
+                            className="form-select"
+                            value={comp.profile}
+                            onChange={(e) => updateComponent(comp.id, 'profile', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            {profiles.map(p => (
+                              <option key={p.id} value={p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`}>
+                                {p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`}
+                              </option>
+                            ))}
+                            <option value="PLATE 3 MM">PLATE 3MM</option>
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder=""
+                            value={comp.profile || ''}
+                            onChange={(e) => updateComponent(comp.id, 'profile', e.target.value)}
+                          />
+                        )}
                       </div>
                       
-                      {/* Delete Button */}
                       <button
                         onClick={() => removeComponent(comp.id)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#ea4335',
-                          cursor: 'pointer',
-                          padding: '8px',
-                          marginBottom: '12px'
-                        }}
+                        style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '8px' }}
                       >
                         <X size={18} />
                       </button>
                     </div>
                     
-                    {/* Similar Component Warning */}
+                    {/* Row 2: Dimensions and Measurements */}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      {!['HARDWARE', 'ACCESSORIES'].includes(comp.subComponent) && (
+                        <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '10px' }}>L (mm)</label>
+                          <input type="number" className="form-input" value={comp.length || ''} onChange={(e) => updateComponent(comp.id, 'length', e.target.value)} />
+                        </div>
+                      )}
+                      
+                      {!['HARDWARE', 'ACCESSORIES', 'ROPE', 'ALUMINUM'].includes(comp.subComponent) && (
+                        <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '10px' }}>W (mm)</label>
+                          <input type="number" className="form-input" value={comp.width || ''} onChange={(e) => updateComponent(comp.id, 'width', e.target.value)} />
+                        </div>
+                      )}
+                      
+                      {['TEAK', 'ACACIA', 'EUCALYPTUS', 'KAMERERE', 'FOAM'].includes(comp.subComponent) && (
+                        <div className="form-group" style={{ width: '55px', marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '10px' }}>T (mm)</label>
+                          <input type="number" className="form-input" value={comp.thickness || ''} onChange={(e) => updateComponent(comp.id, 'thickness', e.target.value)} />
+                        </div>
+                      )}
+                      
+                      <div className="form-group" style={{ width: '50px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Qty</label>
+                        <input type="number" className="form-input" value={comp.qty || '1'} min="1" onChange={(e) => updateComponent(comp.id, 'qty', e.target.value)} />
+                      </div>
+                      
+                      {['ALUMINUM', 'ROPE', 'ACCESSORIES'].includes(comp.subComponent) && (
+                        <div className="form-group" style={{ width: '60px', marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '10px' }}>M</label>
+                          <input type="number" className="form-input" value={comp.m || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'm', e.target.value)} />
+                        </div>
+                      )}
+                      
+                      {['FABRIC', 'CUSHION INSERT', 'TEXTILENE'].includes(comp.subComponent) && (
+                        <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '10px' }}>M²</label>
+                          <input type="number" className="form-input" value={comp.m2 || ''} step="0.0001" onChange={(e) => updateComponent(comp.id, 'm2', e.target.value)} />
+                        </div>
+                      )}
+                      
+                      {['TEAK', 'ACACIA', 'EUCALYPTUS', 'KAMERERE', 'FOAM'].includes(comp.subComponent) && (
+                        <div className="form-group" style={{ width: '70px', marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '10px' }}>M³</label>
+                          <input type="number" className="form-input" value={comp.m3 || ''} step="0.000001" onChange={(e) => updateComponent(comp.id, 'm3', e.target.value)} />
+                        </div>
+                      )}
+                      
+                      <div className="form-group" style={{ width: '60px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Weight</label>
+                        <input type="number" className="form-input" value={comp.weight || ''} step="0.01" placeholder="kg" onChange={(e) => updateComponent(comp.id, 'weight', e.target.value)} />
+                      </div>
+                      
+                      <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Tot.Wt</label>
+                        <input type="number" className="form-input" value={comp.totalWeight || ''} step="0.01" placeholder="kg" onChange={(e) => updateComponent(comp.id, 'totalWeight', e.target.value)} />
+                      </div>
+                      
+                      <div className="form-group" style={{ width: '80px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Density</label>
+                        <input type="text" className="form-input" value={comp.density || ''} placeholder="" onChange={(e) => updateComponent(comp.id, 'density', e.target.value)} />
+                      </div>
+                      
+                      <div className="form-group" style={{ flex: '1', minWidth: '120px', marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Note</label>
+                        <input type="text" className="form-input" value={comp.note || ''} placeholder="e.g., 2-Tenon @20mm" onChange={(e) => updateComponent(comp.id, 'note', e.target.value)} />
+                      </div>
+                    </div>
+                    
                     {renderSimilarWarning(comp.id)}
                     
-                    {/* Existing Component Badge */}
                     {comp.isExisting && (
-                      <div style={{
-                        background: '#d4edda',
-                        color: '#155724',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        marginTop: '4px',
-                        display: 'inline-block'
-                      }}>
-                        ✓ Using existing: {comp.componentId} (${comp.existingCost?.toFixed(2)})
+                      <div className="badge-existing" style={{ marginTop: '8px' }}>
+                        ✓ Using existing: {comp.componentId}
                       </div>
                     )}
                     
-                    {/* Confirmed New Badge */}
                     {comp.isConfirmedNew && (
-                      <div style={{
-                        background: '#cce5ff',
-                        color: '#004085',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        marginTop: '4px',
-                        display: 'inline-block'
-                      }}>
+                      <div className="badge-new" style={{ marginTop: '8px' }}>
                         ✓ Creating new component
                       </div>
                     )}
@@ -1491,33 +1438,15 @@ function BOMCreator({ apiUrl, isConnected }) {
             <div className="grid-3">
               <div className="form-group">
                 <label className="form-label">Length (cm)</label>
-                <input 
-                  type="number" 
-                  className="form-input" 
-                  placeholder="0"
-                  value={packaging.length}
-                  onChange={(e) => setPackaging({...packaging, length: e.target.value})}
-                />
+                <input type="number" className="form-input" placeholder="0" value={packaging.length} onChange={(e) => setPackaging({...packaging, length: e.target.value})} />
               </div>
               <div className="form-group">
                 <label className="form-label">Width (cm)</label>
-                <input 
-                  type="number" 
-                  className="form-input" 
-                  placeholder="0"
-                  value={packaging.width}
-                  onChange={(e) => setPackaging({...packaging, width: e.target.value})}
-                />
+                <input type="number" className="form-input" placeholder="0" value={packaging.width} onChange={(e) => setPackaging({...packaging, width: e.target.value})} />
               </div>
               <div className="form-group">
                 <label className="form-label">Height (cm)</label>
-                <input 
-                  type="number" 
-                  className="form-input" 
-                  placeholder="0"
-                  value={packaging.height}
-                  onChange={(e) => setPackaging({...packaging, height: e.target.value})}
-                />
+                <input type="number" className="form-input" placeholder="0" value={packaging.height} onChange={(e) => setPackaging({...packaging, height: e.target.value})} />
               </div>
             </div>
           </div>
@@ -1530,15 +1459,9 @@ function BOMCreator({ apiUrl, isConnected }) {
               disabled={submitting || !isConnected}
             >
               {submitting ? (
-                <>
-                  <Loader size={18} className="spinner" />
-                  Processing...
-                </>
+                <><Loader size={18} className="spinner" /> Processing...</>
               ) : (
-                <>
-                  <Calculator size={18} />
-                  Calculate Cost
-                </>
+                <><Calculator size={18} /> Calculate Cost</>
               )}
             </button>
             <button className="btn btn-secondary" onClick={resetForm}>
@@ -1548,11 +1471,11 @@ function BOMCreator({ apiUrl, isConnected }) {
         </>
       )}
       
-      {/* Similar Component Modal */}
       {renderSimilarModal()}
     </div>
   );
 }
+
 
 // Cost Analysis Component
 function CostAnalysis({ apiUrl, isConnected }) {
