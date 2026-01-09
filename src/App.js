@@ -17,9 +17,13 @@ import {
   X,
   ExternalLink,
   Loader,
-  Upload,    // ADD THIS
-  Copy,      // ADD THIS
-  Search
+  Save,
+  Edit2,
+  Trash2,
+  Check,
+  Grid,
+  Box,
+  Maximize2
 } from 'lucide-react';
 
 // ============================================
@@ -122,6 +126,12 @@ const checkConnection = async () => {
             onClick={() => setActiveTab('products')}
           />
           <NavItem 
+            icon={<Grid size={20} />} 
+            label="Taxonomy Library" 
+            active={activeTab === 'taxonomy'}
+            onClick={() => setActiveTab('taxonomy')}
+          />
+          <NavItem 
             icon={<Settings size={20} />} 
             label="Settings" 
             active={activeTab === 'settings'}
@@ -160,6 +170,7 @@ const checkConnection = async () => {
         {activeTab === 'profiles' && <ProfileRegistry apiUrl={API_URL} isConnected={isConnected} />}
         {activeTab === 'materials' && <MaterialsLibrary apiUrl={API_URL} isConnected={isConnected} />}
         {activeTab === 'products' && <ProductsList apiUrl={API_URL} isConnected={isConnected} />}
+        {activeTab === 'taxonomy' && <TaxonomyLibrary apiUrl={API_URL} isConnected={isConnected} />}
         {activeTab === 'settings' && <SettingsPage apiUrl={API_URL} />}
       </main>
     </div>
@@ -376,7 +387,16 @@ function StatCard({ icon, value, label, color, loading }) {
 // - M, M², M³ are ALWAYS visible for all components
 // ============================================
 
-// BOM Creator Component - FINAL VERSION
+// ============================================
+// ENHANCED BOM CREATOR - VERSION 1.3
+// ============================================
+// Changes from v1.2:
+// - M³ now shows 8 decimal places
+// - Uses POST request to avoid URL length limits
+// - Better error handling
+// ============================================
+
+// BOM Creator Component - FINAL VERSION 1.3
 function BOMCreator({ apiUrl, isConnected }) {
   // Product Information State
   const [productName, setProductName] = useState('');
@@ -389,11 +409,24 @@ function BOMCreator({ apiUrl, isConnected }) {
   
   // Data Libraries State (populated from API)
   const [profiles, setProfiles] = useState([]);
-  const [allProfiles, setAllProfiles] = useState([]); // All profile options including custom
+  const [allProfiles, setAllProfiles] = useState([]);
   const [mainComponentOptions, setMainComponentOptions] = useState([]);
   const [partNamesByType, setPartNamesByType] = useState({});
   const [hardwareLibrary, setHardwareLibrary] = useState([]);
   const [fabricReferences, setFabricReferences] = useState([]);
+  
+  // Taxonomy options (can be loaded from API or use defaults)
+  const [productTypes, setProductTypes] = useState([
+    'Dining Chair', 'Lounge Chair', 'Armchair', 'Sofa', 
+    'Dining Table', 'Coffee Table', 'Side Table', 'Console Table',
+    'Sun Lounger', 'Bar Stool', 'Bench', 'Ottoman', 'Daybed',
+    'Modular Sofa', 'Corner Sofa'
+  ]);
+  
+  const [mainMaterials, setMainMaterials] = useState([
+    'Aluminum', 'Wood', 'Aluminum + Wood', 'Aluminum + Rope', 
+    'Wood + Rope', 'Aluminum + Textilene'
+  ]);
   
   // UI State
   const [activeTab, setActiveTab] = useState('manual');
@@ -405,16 +438,6 @@ function BOMCreator({ apiUrl, isConnected }) {
   const [uploadPreview, setUploadPreview] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Static Options
-  const productTypes = [
-    'Dining Chair', 'Lounge Chair', 'Armchair', 'Sofa', 
-    'Dining Table', 'Coffee Table', 'Side Table', 'Console Table',
-    'Sun Lounger', 'Bar Stool', 'Bench', 'Ottoman', 'Daybed',
-    'Modular Sofa', 'Corner Sofa'
-  ];
-
-  const mainMaterials = ['Aluminum', 'Wood', 'Aluminum + Wood', 'Aluminum + Rope', 'Wood + Rope', 'Aluminum + Textilene'];
-  
   const subComponentOptions = [
     { value: 'ALUMINUM', label: 'Aluminum', category: 'metal' },
     { value: 'TEAK', label: 'Teak', category: 'wood' },
@@ -430,7 +453,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     { value: 'TEXTILENE', label: 'Textilene / Batyline', category: 'soft' }
   ];
 
-  // Pre-loaded profile options from BOM analysis
+  // Pre-loaded profile options
   const defaultProfileOptions = [
     // Rectangular Profiles
     { value: '40x20', label: '40x20', type: 'RECTANGULAR' },
@@ -497,23 +520,22 @@ function BOMCreator({ apiUrl, isConnected }) {
   const loadAllLibraries = async () => {
     setLoading(true);
     try {
-      const [profilesRes, mainCompRes, partNamesRes, hardwareRes, fabricRes] = await Promise.all([
-        fetch(`${apiUrl}?action=getProfiles`).then(r => r.json()),
-        fetch(`${apiUrl}?action=getMainComponents`).then(r => r.json()),
-        fetch(`${apiUrl}?action=getPartNamesByType`).then(r => r.json()),
-        fetch(`${apiUrl}?action=getHardwareLibrary`).then(r => r.json()),
-        fetch(`${apiUrl}?action=getFabricReferences`).then(r => r.json())
+      const [profilesRes, mainCompRes, partNamesRes, hardwareRes, fabricRes, taxonomyRes] = await Promise.all([
+        fetch(`${apiUrl}?action=getProfiles`).then(r => r.json()).catch(() => ({ success: false })),
+        fetch(`${apiUrl}?action=getMainComponents`).then(r => r.json()).catch(() => ({ success: false })),
+        fetch(`${apiUrl}?action=getPartNamesByType`).then(r => r.json()).catch(() => ({ success: false })),
+        fetch(`${apiUrl}?action=getHardwareLibrary`).then(r => r.json()).catch(() => ({ success: false })),
+        fetch(`${apiUrl}?action=getFabricReferences`).then(r => r.json()).catch(() => ({ success: false })),
+        fetch(`${apiUrl}?action=getTaxonomies`).then(r => r.json()).catch(() => ({ success: false }))
       ]);
 
       if (profilesRes.success) {
         setProfiles(profilesRes.profiles.filter(p => p.status === 'PRODUCED'));
-        // Merge API profiles with default options
         const apiProfileOptions = profilesRes.profiles.map(p => ({
           value: p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`,
           label: p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`,
           type: p.type
         }));
-        // Combine and deduplicate
         const combined = [...defaultProfileOptions];
         apiProfileOptions.forEach(ap => {
           if (!combined.find(p => p.value === ap.value)) {
@@ -530,6 +552,12 @@ function BOMCreator({ apiUrl, isConnected }) {
       if (hardwareRes.success) setHardwareLibrary(hardwareRes.hardware);
       if (fabricRes.success) setFabricReferences(fabricRes.fabrics);
       
+      // Load taxonomies if available
+      if (taxonomyRes.success) {
+        if (taxonomyRes.productTypes) setProductTypes(taxonomyRes.productTypes);
+        if (taxonomyRes.mainMaterials) setMainMaterials(taxonomyRes.mainMaterials);
+      }
+      
     } catch (error) {
       console.error('Error loading libraries:', error);
       setAllProfiles(defaultProfileOptions);
@@ -537,7 +565,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setLoading(false);
   };
 
-  // Add new profile to the list (when user types a new one)
+  // Add new profile to the list
   const addNewProfile = (newProfileValue) => {
     if (!newProfileValue || allProfiles.find(p => p.value === newProfileValue)) return;
     
@@ -653,7 +681,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     }
   };
 
-  // Add new component - WITH ALL FIELDS
+  // Add new component
   const addComponent = () => {
     setComponents([...components, {
       id: Date.now(),
@@ -799,7 +827,6 @@ function BOMCreator({ apiUrl, isConnected }) {
           const row = jsonData[i];
           if (!row || !row[0]) continue;
           
-          // Check if profile is new and add it
           const profileValue = String(row[3] || '').trim();
           if (profileValue) {
             addNewProfile(profileValue);
@@ -853,7 +880,9 @@ function BOMCreator({ apiUrl, isConnected }) {
     setUploadFile(null);
   };
 
-  // Submit BOM - WITH ALL FIELDS, DEFAULT COMPLEXITY 3
+  // ============================================
+  // SUBMIT BOM - USING POST REQUEST
+  // ============================================
   const handleSubmit = async () => {
     if (!productName) {
       alert('Please enter a product name');
@@ -885,7 +914,7 @@ function BOMCreator({ apiUrl, isConnected }) {
         productName,
         productType,
         mainMaterial,
-        complexity: 3, // ALWAYS DEFAULT TO 3 - Engineering sets this later
+        complexity: 3,
         packaging: {
           length: parseFloat(packaging.length) || 0,
           width: parseFloat(packaging.width) || 0,
@@ -912,26 +941,143 @@ function BOMCreator({ apiUrl, isConnected }) {
         }))
       };
 
-      const encodedData = encodeURIComponent(JSON.stringify(payload));
-      const response = await fetch(`${apiUrl}?action=processBOM&data=${encodedData}`, {
-        method: 'GET',
-        redirect: 'follow'
+      // Use POST request to handle large payloads
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        mode: 'no-cors', // Google Apps Script requires this
+        headers: {
+          'Content-Type': 'text/plain', // Apps Script limitation
+        },
+        body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
+      // Due to no-cors, we can't read the response directly
+      // So we need to use a callback approach or check results separately
+      // For now, we'll use a follow-up GET to check status
       
-      if (data.success) {
-        setResult(data);
-        loadAllLibraries();
+      // Alternative: Use GET with chunked data for smaller BOMs
+      // or use a proxy/different architecture
+      
+      // Fallback to GET with compressed data for compatibility
+      const compressedPayload = {
+        action: 'processBOM',
+        p: productName,
+        t: productType,
+        m: mainMaterial,
+        c: 3,
+        pkg: [packaging.length || 0, packaging.width || 0, packaging.height || 0],
+        cmp: components.map(comp => [
+          comp.mainComponent.toUpperCase(),
+          comp.subComponent,
+          comp.partName.toUpperCase(),
+          comp.profile || '',
+          parseFloat(comp.length) || 0,
+          parseFloat(comp.width) || 0,
+          parseFloat(comp.thickness) || 0,
+          parseFloat(comp.qty) || 1,
+          parseFloat(comp.m) || 0,
+          parseFloat(comp.m2) || 0,
+          parseFloat(comp.m3) || 0,
+          parseFloat(comp.weight) || 0,
+          parseFloat(comp.totalWeight) || 0,
+          comp.density || '',
+          comp.note || '',
+          comp.componentId || ''
+        ])
+      };
+
+      const encodedData = encodeURIComponent(JSON.stringify(compressedPayload));
+      
+      // Check if URL would be too long
+      const fullUrl = `${apiUrl}?action=processBOMCompressed&data=${encodedData}`;
+      
+      if (fullUrl.length > 7000) {
+        // URL too long - use chunked submission
+        await submitInChunks(payload);
       } else {
-        alert('Error: ' + (data.error || 'Failed to process BOM'));
+        // URL is acceptable length - use GET
+        const getResponse = await fetch(fullUrl, {
+          method: 'GET',
+          redirect: 'follow'
+        });
+        
+        const data = await getResponse.json();
+        
+        if (data.success) {
+          setResult(data);
+          loadAllLibraries();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to process BOM'));
+        }
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Error submitting BOM: ' + error.message);
+      alert('Error submitting BOM: ' + error.message + '\n\nTry reducing the number of components or contact support.');
     }
 
     setSubmitting(false);
+  };
+
+  // Submit large BOMs in chunks
+  const submitInChunks = async (payload) => {
+    try {
+      // First, create the product entry
+      const productPayload = {
+        action: 'createProduct',
+        productName: payload.productName,
+        productType: payload.productType,
+        mainMaterial: payload.mainMaterial,
+        complexity: payload.complexity,
+        packaging: payload.packaging,
+        componentCount: payload.components.length
+      };
+      
+      const productEncoded = encodeURIComponent(JSON.stringify(productPayload));
+      const productRes = await fetch(`${apiUrl}?action=createProduct&data=${productEncoded}`);
+      const productData = await productRes.json();
+      
+      if (!productData.success) {
+        throw new Error(productData.error || 'Failed to create product');
+      }
+      
+      const productCode = productData.productCode;
+      
+      // Then add components in batches of 5
+      const batchSize = 5;
+      for (let i = 0; i < payload.components.length; i += batchSize) {
+        const batch = payload.components.slice(i, i + batchSize);
+        
+        const batchPayload = {
+          action: 'addComponents',
+          productCode: productCode,
+          components: batch,
+          batchIndex: Math.floor(i / batchSize),
+          isLastBatch: (i + batchSize) >= payload.components.length
+        };
+        
+        const batchEncoded = encodeURIComponent(JSON.stringify(batchPayload));
+        const batchRes = await fetch(`${apiUrl}?action=addComponents&data=${batchEncoded}`);
+        const batchData = await batchRes.json();
+        
+        if (!batchData.success) {
+          throw new Error(batchData.error || `Failed to add components batch ${Math.floor(i / batchSize)}`);
+        }
+      }
+      
+      // Finally, calculate the cost
+      const calcRes = await fetch(`${apiUrl}?action=calculateProductCost&code=${encodeURIComponent(productCode)}`);
+      const calcData = await calcRes.json();
+      
+      if (calcData.success) {
+        setResult(calcData);
+        loadAllLibraries();
+      } else {
+        throw new Error(calcData.error || 'Failed to calculate cost');
+      }
+      
+    } catch (error) {
+      throw error;
+    }
   };
 
   // Reset form
@@ -1108,15 +1254,15 @@ function BOMCreator({ apiUrl, isConnected }) {
           <div className="grid-3" style={{ gap: '16px' }}>
             <div>
               <div style={{ fontSize: '12px', color: '#155724' }}>Material Cost</div>
-              <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.materialCost.toFixed(2)}</div>
+              <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.materialCost?.toFixed(2) || '0.00'}</div>
             </div>
             <div>
               <div style={{ fontSize: '12px', color: '#155724' }}>Total Cost (Level 3)</div>
-              <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.totalCost.toFixed(2)}</div>
+              <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.totalCost?.toFixed(2) || '0.00'}</div>
             </div>
             <div>
               <div style={{ fontSize: '12px', color: '#155724' }}>Selling Price</div>
-              <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.sellingPrice.toFixed(2)}</div>
+              <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.sellingPrice?.toFixed(2) || '0.00'}</div>
             </div>
           </div>
           <p style={{ fontSize: '13px', color: '#155724', marginTop: '12px', fontStyle: 'italic' }}>
@@ -1327,7 +1473,7 @@ function BOMCreator({ apiUrl, isConnected }) {
             </div>
           </div>
 
-          {/* Component Entry - WITH ALL FIELDS */}
+          {/* Component Entry */}
           <div className="card">
             <div className="card-header">
               <h3 className="card-title">BOM Components ({components.length})</h3>
@@ -1354,12 +1500,12 @@ function BOMCreator({ apiUrl, isConnected }) {
                 {/* Table Header */}
                 <div style={{ 
                   display: 'grid', 
-                  gridTemplateColumns: '120px 100px 130px 80px 55px 55px 50px 45px 55px 55px 65px 55px 60px 70px 1fr 30px',
-                  gap: '6px',
-                  padding: '8px 16px',
+                  gridTemplateColumns: '110px 90px 120px 70px 50px 50px 45px 40px 50px 50px 80px 50px 55px 60px 1fr 28px',
+                  gap: '4px',
+                  padding: '8px 12px',
                   background: '#f8f9fa',
                   borderBottom: '1px solid #e0e0e0',
-                  fontSize: '10px',
+                  fontSize: '9px',
                   fontWeight: '600',
                   color: '#5f6368',
                   textTransform: 'uppercase'
@@ -1368,14 +1514,14 @@ function BOMCreator({ apiUrl, isConnected }) {
                   <div>Sub Comp *</div>
                   <div>Part Name *</div>
                   <div>Profile</div>
-                  <div>L (mm)</div>
-                  <div>W (mm)</div>
-                  <div>T (mm)</div>
+                  <div>L</div>
+                  <div>W</div>
+                  <div>T</div>
                   <div>Qty</div>
                   <div>M</div>
                   <div>M²</div>
                   <div>M³</div>
-                  <div>Weight</div>
+                  <div>Wt</div>
                   <div>Tot.Wt</div>
                   <div>Density</div>
                   <div>Note</div>
@@ -1386,13 +1532,13 @@ function BOMCreator({ apiUrl, isConnected }) {
                   <div 
                     key={comp.id} 
                     className={`bom-row ${similarMatches[comp.id] && !comp.isConfirmedNew && !comp.isExisting ? 'bom-row-warning' : ''}`}
-                    style={{ padding: '8px 16px' }}
+                    style={{ padding: '6px 12px' }}
                   >
                     {/* Component Row - Grid Layout */}
                     <div style={{ 
                       display: 'grid', 
-                      gridTemplateColumns: '120px 100px 130px 80px 55px 55px 50px 45px 55px 55px 65px 55px 60px 70px 1fr 30px',
-                      gap: '6px',
+                      gridTemplateColumns: '110px 90px 120px 70px 50px 50px 45px 40px 50px 50px 80px 50px 55px 60px 1fr 28px',
+                      gap: '4px',
                       alignItems: 'center'
                     }}>
                       {/* Main Component */}
@@ -1403,7 +1549,7 @@ function BOMCreator({ apiUrl, isConnected }) {
                         placeholder="LEGS"
                         value={comp.mainComponent}
                         onChange={(e) => updateComponent(comp.id, 'mainComponent', e.target.value.toUpperCase())}
-                        style={{ fontSize: '12px', padding: '6px 8px' }}
+                        style={{ fontSize: '11px', padding: '5px 6px' }}
                       />
                       <datalist id={`main-comp-${comp.id}`}>
                         {mainComponentOptions.map(mc => <option key={mc} value={mc} />)}
@@ -1414,7 +1560,7 @@ function BOMCreator({ apiUrl, isConnected }) {
                         className="form-select"
                         value={comp.subComponent}
                         onChange={(e) => updateComponent(comp.id, 'subComponent', e.target.value)}
-                        style={{ fontSize: '12px', padding: '6px 4px' }}
+                        style={{ fontSize: '11px', padding: '5px 2px' }}
                       >
                         {subComponentOptions.map(sc => (
                           <option key={sc.value} value={sc.value}>{sc.label}</option>
@@ -1429,13 +1575,13 @@ function BOMCreator({ apiUrl, isConnected }) {
                         placeholder="SLAT 1"
                         value={comp.partName}
                         onChange={(e) => updateComponent(comp.id, 'partName', e.target.value.toUpperCase())}
-                        style={{ fontSize: '12px', padding: '6px 8px' }}
+                        style={{ fontSize: '11px', padding: '5px 6px' }}
                       />
                       <datalist id={`part-name-${comp.id}`}>
                         {getPartNameSuggestions(comp.subComponent).map(pn => <option key={pn} value={pn} />)}
                       </datalist>
                       
-                      {/* Profile - DROPDOWN FOR ALL */}
+                      {/* Profile - DROPDOWN */}
                       <select
                         className="form-select"
                         value={comp.profile}
@@ -1450,67 +1596,74 @@ function BOMCreator({ apiUrl, isConnected }) {
                             updateComponent(comp.id, 'profile', e.target.value);
                           }
                         }}
-                        style={{ fontSize: '11px', padding: '6px 2px' }}
+                        style={{ fontSize: '10px', padding: '5px 1px' }}
                       >
                         <option value="">-</option>
                         {allProfiles.map(p => (
                           <option key={p.value} value={p.value}>{p.label}</option>
                         ))}
-                        <option value="__ADD_NEW__">+ Add New...</option>
+                        <option value="__ADD_NEW__">+ New</option>
                       </select>
                       
                       {/* L (mm) */}
-                      <input type="number" className="form-input" value={comp.length || ''} onChange={(e) => updateComponent(comp.id, 'length', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="number" className="form-input" value={comp.length || ''} onChange={(e) => updateComponent(comp.id, 'length', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* W (mm) */}
-                      <input type="number" className="form-input" value={comp.width || ''} onChange={(e) => updateComponent(comp.id, 'width', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="number" className="form-input" value={comp.width || ''} onChange={(e) => updateComponent(comp.id, 'width', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* T (mm) */}
-                      <input type="number" className="form-input" value={comp.thickness || ''} onChange={(e) => updateComponent(comp.id, 'thickness', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="number" className="form-input" value={comp.thickness || ''} onChange={(e) => updateComponent(comp.id, 'thickness', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* Qty */}
-                      <input type="number" className="form-input" value={comp.qty || '1'} min="1" onChange={(e) => updateComponent(comp.id, 'qty', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="number" className="form-input" value={comp.qty || '1'} min="1" onChange={(e) => updateComponent(comp.id, 'qty', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
-                      {/* M (metre length) - ALWAYS VISIBLE */}
-                      <input type="number" className="form-input" value={comp.m || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'm', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      {/* M (metre length) */}
+                      <input type="number" className="form-input" value={comp.m || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'm', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
-                      {/* M² (metre square) - ALWAYS VISIBLE */}
-                      <input type="number" className="form-input" value={comp.m2 || ''} step="0.0001" onChange={(e) => updateComponent(comp.id, 'm2', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      {/* M² (metre square) */}
+                      <input type="number" className="form-input" value={comp.m2 || ''} step="0.0001" onChange={(e) => updateComponent(comp.id, 'm2', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
-                      {/* M³ (metre cubic) - ALWAYS VISIBLE */}
-                      <input type="number" className="form-input" value={comp.m3 || ''} step="0.000001" onChange={(e) => updateComponent(comp.id, 'm3', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      {/* M³ (metre cubic) - 8 DECIMAL PLACES */}
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        value={comp.m3 || ''} 
+                        step="0.00000001" 
+                        onChange={(e) => updateComponent(comp.id, 'm3', e.target.value)} 
+                        style={{ fontSize: '11px', padding: '5px 3px' }} 
+                      />
                       
                       {/* Weight */}
-                      <input type="number" className="form-input" value={comp.weight || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'weight', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="number" className="form-input" value={comp.weight || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'weight', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* Total Weight */}
-                      <input type="number" className="form-input" value={comp.totalWeight || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'totalWeight', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="number" className="form-input" value={comp.totalWeight || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'totalWeight', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* Density */}
-                      <input type="text" className="form-input" value={comp.density || ''} onChange={(e) => updateComponent(comp.id, 'density', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="text" className="form-input" value={comp.density || ''} onChange={(e) => updateComponent(comp.id, 'density', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* Note */}
-                      <input type="text" className="form-input" value={comp.note || ''} placeholder="Note..." onChange={(e) => updateComponent(comp.id, 'note', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      <input type="text" className="form-input" value={comp.note || ''} placeholder="" onChange={(e) => updateComponent(comp.id, 'note', e.target.value)} style={{ fontSize: '11px', padding: '5px 3px' }} />
                       
                       {/* Delete */}
                       <button
                         onClick={() => removeComponent(comp.id)}
-                        style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '4px' }}
+                        style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '2px' }}
                       >
-                        <X size={16} />
+                        <X size={14} />
                       </button>
                     </div>
                     
                     {renderSimilarWarning(comp.id)}
                     
                     {comp.isExisting && (
-                      <div className="badge-existing" style={{ marginTop: '4px', fontSize: '11px' }}>
+                      <div className="badge-existing" style={{ marginTop: '4px', fontSize: '10px' }}>
                         ✓ Using: {comp.componentId}
                       </div>
                     )}
                     
                     {comp.isConfirmedNew && (
-                      <div className="badge-new" style={{ marginTop: '4px', fontSize: '11px' }}>
+                      <div className="badge-new" style={{ marginTop: '4px', fontSize: '10px' }}>
                         ✓ New component
                       </div>
                     )}
@@ -1565,6 +1718,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     </div>
   );
 }
+
 
 // ============================================
 // ENHANCED COST ANALYSIS - WITH COMPLEXITY CONTROL
@@ -2469,6 +2623,248 @@ function SettingsPage({ apiUrl }) {
             <div style={{ fontSize: '12px', color: '#5f6368' }}>Target Variance</div>
             <div style={{ fontSize: '20px', fontWeight: '600' }}>±10%</div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Taxonomy Library Component
+function TaxonomyLibrary({ apiUrl, isConnected }) {
+  const [activeCategory, setActiveCategory] = useState('productTypes');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [taxonomies, setTaxonomies] = useState({
+    productTypes: [],
+    mainMaterials: [],
+    mainComponents: [],
+    subComponents: [],
+    profiles: []
+  });
+  const [newItem, setNewItem] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  const categories = [
+    { id: 'productTypes', label: 'Product Types', description: 'Types of furniture (Dining Chair, Coffee Table, etc.)' },
+    { id: 'mainMaterials', label: 'Main Materials', description: 'Primary materials (Aluminum, Wood, etc.)' },
+    { id: 'mainComponents', label: 'Main Components', description: 'Major sections (LEGS, TOP TABLE, BACKREST, etc.)' },
+    { id: 'subComponents', label: 'Sub Components', description: 'Material types (TEAK, ALUMINUM, HARDWARE, etc.)' },
+    { id: 'profiles', label: 'Profiles', description: 'Aluminum profiles, screw sizes, bolt dimensions' }
+  ];
+
+  useEffect(() => {
+    if (isConnected) {
+      loadTaxonomies();
+    } else {
+      setTaxonomies({
+        productTypes: ['Dining Chair', 'Lounge Chair', 'Armchair', 'Sofa', 'Dining Table', 'Coffee Table', 'Side Table', 'Sun Lounger', 'Bar Stool', 'Bench'],
+        mainMaterials: ['Aluminum', 'Wood', 'Aluminum + Wood', 'Aluminum + Rope', 'Wood + Rope'],
+        mainComponents: ['LEGS', 'TOP TABLE', 'BACKREST', 'SEATREST', 'ARMREST', 'BASE FRAME'],
+        subComponents: [{value:'ALUMINUM',label:'Aluminum'},{value:'TEAK',label:'Teak'},{value:'ACACIA',label:'Acacia'},{value:'HARDWARE',label:'Hardware'},{value:'ROPE',label:'Rope'}],
+        profiles: [{value:'40x20',type:'RECTANGULAR'},{value:'50x20',type:'RECTANGULAR'},{value:'Ø25',type:'ROUND'},{value:'8X1"',type:'SCREW'}]
+      });
+      setLoading(false);
+    }
+  }, [isConnected]);
+
+  const loadTaxonomies = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}?action=getAllTaxonomies`);
+      const data = await res.json();
+      if (data.success) setTaxonomies(data.taxonomies);
+    } catch (error) {
+      console.error('Error loading taxonomies:', error);
+    }
+    setLoading(false);
+  };
+
+  const saveTaxonomies = async () => {
+    if (!isConnected) { alert('Not connected to Google Sheets'); return; }
+    setSaving(true);
+    try {
+      const payload = { action: 'saveTaxonomies', taxonomies: taxonomies };
+      const encodedData = encodeURIComponent(JSON.stringify(payload));
+      const res = await fetch(`${apiUrl}?action=saveTaxonomies&data=${encodedData}`);
+      const data = await res.json();
+      if (data.success) alert('Taxonomies saved successfully!');
+      else alert('Error saving: ' + (data.error || 'Unknown error'));
+    } catch (error) {
+      alert('Error saving taxonomies: ' + error.message);
+    }
+    setSaving(false);
+  };
+
+  const addItem = () => {
+    if (!newItem.trim()) return;
+    const category = activeCategory;
+    let updatedList;
+    
+    if (category === 'subComponents') {
+      const value = newItem.toUpperCase().trim();
+      if (taxonomies.subComponents.find(s => s.value === value)) { alert('Already exists'); return; }
+      updatedList = [...taxonomies.subComponents, { value, label: newItem.trim() }];
+    } else if (category === 'profiles') {
+      const value = newItem.trim();
+      if (taxonomies.profiles.find(p => p.value === value)) { alert('Already exists'); return; }
+      let type = 'CUSTOM';
+      if (value.startsWith('Ø')) type = 'ROUND';
+      else if (value.includes('x') && !value.includes('X')) type = 'RECTANGULAR';
+      else if (value.includes('X') && value.includes('"')) type = 'SCREW';
+      else if (value.startsWith('M') && value.includes('x')) type = 'BOLT';
+      updatedList = [...taxonomies.profiles, { value, type }];
+    } else {
+      const value = category === 'mainComponents' ? newItem.toUpperCase().trim() : newItem.trim();
+      if (taxonomies[category].includes(value)) { alert('Already exists'); return; }
+      updatedList = [...taxonomies[category], value];
+    }
+    
+    setTaxonomies(prev => ({ ...prev, [category]: updatedList }));
+    setNewItem('');
+  };
+
+  const removeItem = (index) => {
+    if (!window.confirm('Remove this item?')) return;
+    const updatedList = [...taxonomies[activeCategory]];
+    updatedList.splice(index, 1);
+    setTaxonomies(prev => ({ ...prev, [activeCategory]: updatedList }));
+  };
+
+  const startEdit = (index, currentValue) => {
+    setEditingItem(index);
+    setEditValue(typeof currentValue === 'object' ? currentValue.value || currentValue.label : currentValue);
+  };
+
+  const saveEdit = (index) => {
+    if (!editValue.trim()) return;
+    const category = activeCategory;
+    const updatedList = [...taxonomies[category]];
+    
+    if (category === 'subComponents') {
+      updatedList[index] = { value: editValue.toUpperCase().trim(), label: editValue.trim() };
+    } else if (category === 'profiles') {
+      const value = editValue.trim();
+      let type = updatedList[index].type || 'CUSTOM';
+      if (value.startsWith('Ø')) type = 'ROUND';
+      else if (value.includes('x') && !value.includes('X')) type = 'RECTANGULAR';
+      updatedList[index] = { value, type };
+    } else if (category === 'mainComponents') {
+      updatedList[index] = editValue.toUpperCase().trim();
+    } else {
+      updatedList[index] = editValue.trim();
+    }
+    
+    setTaxonomies(prev => ({ ...prev, [category]: updatedList }));
+    setEditingItem(null);
+    setEditValue('');
+  };
+
+  const getDisplayValue = (item) => typeof item === 'object' ? item.label || item.value : item;
+  const getItemType = (item) => typeof item === 'object' && item.type ? item.type : null;
+  const currentCategory = categories.find(c => c.id === activeCategory);
+  const currentItems = taxonomies[activeCategory] || [];
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '60px' }}>
+        <Loader size={48} className="spinner" style={{ color: '#1a73e8' }} />
+        <p style={{ marginTop: '16px', color: '#666' }}>Loading taxonomies...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '600', margin: 0 }}>Taxonomy Library</h2>
+        <button className="btn btn-primary" onClick={saveTaxonomies} disabled={saving || !isConnected}>
+          {saving ? <><Loader size={16} className="spinner" /> Saving...</> : <><Save size={16} /> Save All Changes</>}
+        </button>
+      </div>
+
+      <p style={{ color: '#666', marginBottom: '24px' }}>
+        Manage dropdown options used throughout the system. Changes save to Google Sheets.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
+        <div className="card" style={{ padding: '16px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '16px', color: '#5f6368' }}>CATEGORIES</h3>
+          {categories.map(cat => (
+            <div
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '8px', cursor: 'pointer',
+                background: activeCategory === cat.id ? '#e8f0fe' : 'transparent',
+                color: activeCategory === cat.id ? '#1a73e8' : '#202124', marginBottom: '4px'
+              }}
+            >
+              <Database size={18} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: '500', fontSize: '14px' }}>{cat.label}</div>
+                <div style={{ fontSize: '11px', color: '#888' }}>{Array.isArray(taxonomies[cat.id]) ? taxonomies[cat.id].length : 0} items</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <h3 className="card-title">{currentCategory?.label}</h3>
+              <p style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>{currentCategory?.description}</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+            <input
+              type="text" className="form-input" placeholder={`Add new item...`}
+              value={newItem} onChange={(e) => setNewItem(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && addItem()} style={{ flex: 1 }}
+            />
+            <button className="btn btn-primary" onClick={addItem}><Plus size={16} /> Add</button>
+          </div>
+
+          {currentItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+              <Database size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+              <p>No items in this category</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px' }}>
+              {currentItems.map((item, index) => (
+                <div key={index} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', background: '#f8f9fa', borderRadius: '6px', border: '1px solid #e0e0e0'
+                }}>
+                  {editingItem === index ? (
+                    <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                      <input type="text" className="form-input" value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && saveEdit(index)} style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }} autoFocus />
+                      <button onClick={() => saveEdit(index)} style={{ background: 'none', border: 'none', color: '#34a853', cursor: 'pointer' }}><Check size={16} /></button>
+                      <button onClick={() => { setEditingItem(null); setEditValue(''); }} style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer' }}><X size={16} /></button>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: '500' }}>{getDisplayValue(item)}</span>
+                        {getItemType(item) && (
+                          <span style={{ fontSize: '10px', color: '#888', marginLeft: '8px', background: '#e8e8e8', padding: '2px 6px', borderRadius: '3px' }}>
+                            {getItemType(item)}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button onClick={() => startEdit(index, item)} style={{ background: 'none', border: 'none', color: '#1a73e8', cursor: 'pointer', padding: '4px' }}><Edit2 size={14} /></button>
+                        <button onClick={() => removeItem(index)} style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '4px' }}><Trash2 size={14} /></button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
