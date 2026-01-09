@@ -531,20 +531,22 @@ function BOMCreator({ apiUrl, isConnected }) {
         fetch(`${apiUrl}?action=getTaxonomies`).then(r => r.json()).catch(() => ({ success: false }))
       ]);
 
-      if (profilesRes.success) {
-        setProfiles(profilesRes.profiles.filter(p => p.status === 'PRODUCED'));
-        const apiProfileOptions = profilesRes.profiles.map(p => ({
-          value: p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`,
-          label: p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`,
-          type: p.type
-        }));
-        const combined = [...defaultProfileOptions];
-        apiProfileOptions.forEach(ap => {
-          if (!combined.find(p => p.value === ap.value)) {
-            combined.push(ap);
-          }
-        });
-        setAllProfiles(combined);
+   // Load profiles from single source of truth (Profile_Registry)
+      const allProfilesRes = await fetch(`${apiUrl}?action=getAllProfiles`).then(r => r.json()).catch(() => ({ success: false }));
+
+      if (allProfilesRes.success && allProfilesRes.dropdownOptions) {
+        // Only show PRODUCED and REVIEW profiles in dropdown (not NEW - they need tooling)
+        const availableProfiles = allProfilesRes.dropdownOptions
+          .filter(p => p.status === 'PRODUCED' || p.status === 'REVIEW')
+          .map(p => ({
+            value: p.value,
+            label: `${p.type === 'ROUND' ? 'Ø' + p.width : p.width + 'x' + p.height}x${p.thickness}`,
+            type: p.type,
+            status: p.status
+          }));
+        
+        setAllProfiles(availableProfiles);
+        setProfiles(allProfilesRes.profiles || []);
       } else {
         setAllProfiles(defaultProfileOptions);
       }
@@ -2631,7 +2633,10 @@ function SettingsPage({ apiUrl }) {
   );
 }
 
-// Taxonomy Library Component
+// ============================================
+// TAXONOMY LIBRARY - V5.2.0
+// With Structured Profile Editor
+// ============================================
 function TaxonomyLibrary({ apiUrl, isConnected }) {
   const [activeCategory, setActiveCategory] = useState('productTypes');
   const [loading, setLoading] = useState(true);
@@ -2640,66 +2645,235 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
     productTypes: [],
     mainMaterials: [],
     mainComponents: [],
-    subComponents: [],
-    profiles: []
+    subComponents: []
   });
+  const [profiles, setProfiles] = useState([]);
+  const [profileShapes, setProfileShapes] = useState([]);
   const [newItem, setNewItem] = useState('');
   const [editingItem, setEditingItem] = useState(null);
   const [editValue, setEditValue] = useState('');
+  
+  // Profile Editor State
+  const [newProfile, setNewProfile] = useState({
+    material: 'ALUMINUM',
+    type: 'RECTANGULAR',
+    width: '',
+    height: '',
+    thickness: '',
+    status: 'NEW',
+    notes: ''
+  });
+  const [profileError, setProfileError] = useState('');
+  const [addingProfile, setAddingProfile] = useState(false);
 
   const categories = [
     { id: 'productTypes', label: 'Product Types', description: 'Types of furniture (Dining Chair, Coffee Table, etc.)' },
     { id: 'mainMaterials', label: 'Main Materials', description: 'Primary materials (Aluminum, Wood, etc.)' },
     { id: 'mainComponents', label: 'Main Components', description: 'Major sections (LEGS, TOP TABLE, BACKREST, etc.)' },
     { id: 'subComponents', label: 'Sub Components', description: 'Material types (TEAK, ALUMINUM, HARDWARE, etc.)' },
-    { id: 'profiles', label: 'Profiles', description: 'Aluminum profiles, screw sizes, bolt dimensions' }
+    { id: 'profiles', label: 'Profiles', description: 'Aluminum/Steel profiles with dimensions and thickness', isSpecial: true }
   ];
 
   useEffect(() => {
     if (isConnected) {
-      loadTaxonomies();
+      loadAllData();
     } else {
-      setTaxonomies({
-        productTypes: ['Dining Chair', 'Lounge Chair', 'Armchair', 'Sofa', 'Dining Table', 'Coffee Table', 'Side Table', 'Sun Lounger', 'Bar Stool', 'Bench'],
-        mainMaterials: ['Aluminum', 'Wood', 'Aluminum + Wood', 'Aluminum + Rope', 'Wood + Rope'],
-        mainComponents: ['LEGS', 'TOP TABLE', 'BACKREST', 'SEATREST', 'ARMREST', 'BASE FRAME'],
-        subComponents: [{value:'ALUMINUM',label:'Aluminum'},{value:'TEAK',label:'Teak'},{value:'ACACIA',label:'Acacia'},{value:'HARDWARE',label:'Hardware'},{value:'ROPE',label:'Rope'}],
-        profiles: [{value:'40x20',type:'RECTANGULAR'},{value:'50x20',type:'RECTANGULAR'},{value:'Ø25',type:'ROUND'},{value:'8X1"',type:'SCREW'}]
-      });
-      setLoading(false);
+      loadDefaults();
     }
   }, [isConnected]);
 
-  const loadTaxonomies = async () => {
+  const loadDefaults = () => {
+    setTaxonomies({
+      productTypes: ['Dining Chair', 'Lounge Chair', 'Dining Table', 'Coffee Table', 'Sun Lounger'],
+      mainMaterials: ['Aluminum', 'Wood', 'Aluminum + Wood'],
+      mainComponents: ['LEGS', 'TOP TABLE', 'BACKREST', 'SEATREST', 'ARMREST'],
+      subComponents: [
+        {value:'ALUMINUM',label:'Aluminum'},
+        {value:'TEAK',label:'Teak'},
+        {value:'HARDWARE',label:'Hardware'}
+      ]
+    });
+    setProfileShapes([
+      { value: 'RECTANGULAR', label: 'Rectangular', requiresHeight: true },
+      { value: 'SQUARE', label: 'Square', requiresHeight: false },
+      { value: 'ROUND', label: 'Round Tube', requiresHeight: false },
+      { value: 'FLATBAR', label: 'Flat Bar', requiresHeight: true },
+      { value: 'PLATE', label: 'Plate/Sheet', requiresHeight: false }
+    ]);
+    setLoading(false);
+  };
+
+  const loadAllData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiUrl}?action=getAllTaxonomies`);
-      const data = await res.json();
-      if (data.success) setTaxonomies(data.taxonomies);
+      // Load taxonomies (excluding profiles)
+      const taxRes = await fetch(`${apiUrl}?action=getAllTaxonomies`);
+      const taxData = await taxRes.json();
+      if (taxData.success) {
+        setTaxonomies({
+          productTypes: taxData.taxonomies.productTypes || [],
+          mainMaterials: taxData.taxonomies.mainMaterials || [],
+          mainComponents: taxData.taxonomies.mainComponents || [],
+          subComponents: taxData.taxonomies.subComponents || []
+        });
+      }
+      
+      // Load profiles from Profile_Registry (single source of truth)
+      const profRes = await fetch(`${apiUrl}?action=getAllProfiles`);
+      const profData = await profRes.json();
+      if (profData.success) {
+        setProfiles(profData.profiles || []);
+      }
+      
+      // Load profile shapes
+      const shapesRes = await fetch(`${apiUrl}?action=getProfileShapes`);
+      const shapesData = await shapesRes.json();
+      if (shapesData.success) {
+        setProfileShapes(shapesData.shapes || []);
+      }
+      
     } catch (error) {
-      console.error('Error loading taxonomies:', error);
+      console.error('Error loading data:', error);
     }
     setLoading(false);
   };
 
+  // Save taxonomies (not profiles - those save individually)
   const saveTaxonomies = async () => {
     if (!isConnected) { alert('Not connected to Google Sheets'); return; }
     setSaving(true);
     try {
-      const payload = { action: 'saveTaxonomies', taxonomies: taxonomies };
+      const payload = { taxonomies: taxonomies };
       const encodedData = encodeURIComponent(JSON.stringify(payload));
       const res = await fetch(`${apiUrl}?action=saveTaxonomies&data=${encodedData}`);
       const data = await res.json();
-      if (data.success) alert('Taxonomies saved successfully!');
-      else alert('Error saving: ' + (data.error || 'Unknown error'));
+      if (data.success) {
+        alert('Taxonomies saved successfully!');
+      } else {
+        alert('Error saving: ' + (data.error || 'Unknown error'));
+      }
     } catch (error) {
       alert('Error saving taxonomies: ' + error.message);
     }
     setSaving(false);
   };
 
+  // Add new profile with validation
+  const addProfile = async () => {
+    if (!isConnected) { alert('Not connected to Google Sheets'); return; }
+    
+    setProfileError('');
+    setAddingProfile(true);
+    
+    try {
+      const payload = {
+        material: newProfile.material,
+        type: newProfile.type,
+        width: parseFloat(newProfile.width) || 0,
+        height: parseFloat(newProfile.height) || 0,
+        thickness: parseFloat(newProfile.thickness) || 0,
+        status: newProfile.status,
+        notes: newProfile.notes
+      };
+      
+      // Client-side validation
+      if (newProfile.type === 'ROUND') {
+        if (!newProfile.width) {
+          setProfileError('Diameter is required for round profiles');
+          setAddingProfile(false);
+          return;
+        }
+      } else if (newProfile.type === 'PLATE') {
+        // Only thickness needed
+      } else {
+        if (!newProfile.width) {
+          setProfileError('Width is required');
+          setAddingProfile(false);
+          return;
+        }
+        if (newProfile.type === 'RECTANGULAR' && !newProfile.height) {
+          setProfileError('Height is required for rectangular profiles');
+          setAddingProfile(false);
+          return;
+        }
+      }
+      
+      if ((newProfile.material === 'ALUMINUM' || newProfile.material === 'STEEL') && !newProfile.thickness) {
+        setProfileError('Thickness is REQUIRED for aluminum and steel profiles');
+        setAddingProfile(false);
+        return;
+      }
+      
+      const encodedData = encodeURIComponent(JSON.stringify(payload));
+      const res = await fetch(`${apiUrl}?action=addProfile&data=${encodedData}`);
+      const data = await res.json();
+      
+      if (data.success) {
+        // Add to local state
+        setProfiles(prev => [...prev, data.profile]);
+        // Reset form
+        setNewProfile({
+          material: 'ALUMINUM',
+          type: 'RECTANGULAR',
+          width: '',
+          height: '',
+          thickness: '',
+          status: 'NEW',
+          notes: ''
+        });
+        alert(`Profile ${data.profileId} added successfully!`);
+      } else {
+        setProfileError(data.error || 'Failed to add profile');
+      }
+    } catch (error) {
+      setProfileError('Error adding profile: ' + error.message);
+    }
+    setAddingProfile(false);
+  };
+
+  // Delete profile
+  const deleteProfile = async (profileId) => {
+    if (!window.confirm(`Delete profile ${profileId}?`)) return;
+    
+    try {
+      const payload = { profileId: profileId };
+      const encodedData = encodeURIComponent(JSON.stringify(payload));
+      const res = await fetch(`${apiUrl}?action=deleteProfile&data=${encodedData}`);
+      const data = await res.json();
+      
+      if (data.success) {
+        setProfiles(prev => prev.filter(p => p.profileId !== profileId));
+      } else {
+        alert('Error: ' + data.error);
+      }
+    } catch (error) {
+      alert('Error deleting profile: ' + error.message);
+    }
+  };
+
+  // Update profile status
+  const updateProfileStatus = async (profileId, newStatus) => {
+    try {
+      const payload = { profileId: profileId, status: newStatus };
+      const encodedData = encodeURIComponent(JSON.stringify(payload));
+      const res = await fetch(`${apiUrl}?action=updateProfile&data=${encodedData}`);
+      const data = await res.json();
+      
+      if (data.success) {
+        setProfiles(prev => prev.map(p => 
+          p.profileId === profileId ? { ...p, status: newStatus } : p
+        ));
+      } else {
+        alert('Error: ' + data.error);
+      }
+    } catch (error) {
+      alert('Error updating profile: ' + error.message);
+    }
+  };
+
+  // Add item to non-profile categories
   const addItem = () => {
-    if (!newItem.trim()) return;
+    if (!newItem.trim() || activeCategory === 'profiles') return;
     const category = activeCategory;
     let updatedList;
     
@@ -2707,15 +2881,6 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
       const value = newItem.toUpperCase().trim();
       if (taxonomies.subComponents.find(s => s.value === value)) { alert('Already exists'); return; }
       updatedList = [...taxonomies.subComponents, { value, label: newItem.trim() }];
-    } else if (category === 'profiles') {
-      const value = newItem.trim();
-      if (taxonomies.profiles.find(p => p.value === value)) { alert('Already exists'); return; }
-      let type = 'CUSTOM';
-      if (value.startsWith('Ø')) type = 'ROUND';
-      else if (value.includes('x') && !value.includes('X')) type = 'RECTANGULAR';
-      else if (value.includes('X') && value.includes('"')) type = 'SCREW';
-      else if (value.startsWith('M') && value.includes('x')) type = 'BOLT';
-      updatedList = [...taxonomies.profiles, { value, type }];
     } else {
       const value = category === 'mainComponents' ? newItem.toUpperCase().trim() : newItem.trim();
       if (taxonomies[category].includes(value)) { alert('Already exists'); return; }
@@ -2727,6 +2892,7 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
   };
 
   const removeItem = (index) => {
+    if (activeCategory === 'profiles') return;
     if (!window.confirm('Remove this item?')) return;
     const updatedList = [...taxonomies[activeCategory]];
     updatedList.splice(index, 1);
@@ -2739,18 +2905,12 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
   };
 
   const saveEdit = (index) => {
-    if (!editValue.trim()) return;
+    if (!editValue.trim() || activeCategory === 'profiles') return;
     const category = activeCategory;
     const updatedList = [...taxonomies[category]];
     
     if (category === 'subComponents') {
       updatedList[index] = { value: editValue.toUpperCase().trim(), label: editValue.trim() };
-    } else if (category === 'profiles') {
-      const value = editValue.trim();
-      let type = updatedList[index].type || 'CUSTOM';
-      if (value.startsWith('Ø')) type = 'ROUND';
-      else if (value.includes('x') && !value.includes('X')) type = 'RECTANGULAR';
-      updatedList[index] = { value, type };
     } else if (category === 'mainComponents') {
       updatedList[index] = editValue.toUpperCase().trim();
     } else {
@@ -2763,15 +2923,15 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
   };
 
   const getDisplayValue = (item) => typeof item === 'object' ? item.label || item.value : item;
-  const getItemType = (item) => typeof item === 'object' && item.type ? item.type : null;
   const currentCategory = categories.find(c => c.id === activeCategory);
-  const currentItems = taxonomies[activeCategory] || [];
+  const currentItems = activeCategory === 'profiles' ? profiles : (taxonomies[activeCategory] || []);
+  const selectedShape = profileShapes.find(s => s.value === newProfile.type);
 
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '60px' }}>
         <Loader size={48} className="spinner" style={{ color: '#1a73e8' }} />
-        <p style={{ marginTop: '16px', color: '#666' }}>Loading taxonomies...</p>
+        <p style={{ marginTop: '16px', color: '#666' }}>Loading data...</p>
       </div>
     );
   }
@@ -2780,16 +2940,15 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '600', margin: 0 }}>Taxonomy Library</h2>
-        <button className="btn btn-primary" onClick={saveTaxonomies} disabled={saving || !isConnected}>
-          {saving ? <><Loader size={16} className="spinner" /> Saving...</> : <><Save size={16} /> Save All Changes</>}
-        </button>
+        {activeCategory !== 'profiles' && (
+          <button className="btn btn-primary" onClick={saveTaxonomies} disabled={saving || !isConnected}>
+            {saving ? <><Loader size={16} className="spinner" /> Saving...</> : <><Save size={16} /> Save Changes</>}
+          </button>
+        )}
       </div>
 
-      <p style={{ color: '#666', marginBottom: '24px' }}>
-        Manage dropdown options used throughout the system. Changes save to Google Sheets.
-      </p>
-
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
+        {/* Categories Sidebar */}
         <div className="card" style={{ padding: '16px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '16px', color: '#5f6368' }}>CATEGORIES</h3>
           {categories.map(cat => (
@@ -2799,18 +2958,22 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
               style={{
                 display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '8px', cursor: 'pointer',
                 background: activeCategory === cat.id ? '#e8f0fe' : 'transparent',
-                color: activeCategory === cat.id ? '#1a73e8' : '#202124', marginBottom: '4px'
+                color: activeCategory === cat.id ? '#1a73e8' : '#202124', marginBottom: '4px',
+                border: cat.isSpecial ? '2px solid #fbbc04' : 'none'
               }}
             >
-              <Database size={18} />
+              {cat.isSpecial ? <Wrench size={18} /> : <Database size={18} />}
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: '500', fontSize: '14px' }}>{cat.label}</div>
-                <div style={{ fontSize: '11px', color: '#888' }}>{Array.isArray(taxonomies[cat.id]) ? taxonomies[cat.id].length : 0} items</div>
+                <div style={{ fontSize: '11px', color: '#888' }}>
+                  {cat.id === 'profiles' ? profiles.length : (Array.isArray(taxonomies[cat.id]) ? taxonomies[cat.id].length : 0)} items
+                </div>
               </div>
             </div>
           ))}
         </div>
 
+        {/* Content Area */}
         <div className="card">
           <div className="card-header">
             <div>
@@ -2819,52 +2982,256 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-            <input
-              type="text" className="form-input" placeholder={`Add new item...`}
-              value={newItem} onChange={(e) => setNewItem(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && addItem()} style={{ flex: 1 }}
-            />
-            <button className="btn btn-primary" onClick={addItem}><Plus size={16} /> Add</button>
-          </div>
+          {/* PROFILES - Special Structured Editor */}
+          {activeCategory === 'profiles' ? (
+            <div>
+              {/* Add New Profile Form */}
+              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Plus size={18} /> Add New Profile
+                </h4>
+                
+                {profileError && (
+                  <div style={{ background: '#f8d7da', color: '#721c24', padding: '10px 12px', borderRadius: '6px', marginBottom: '16px', fontSize: '13px' }}>
+                    ⚠️ {profileError}
+                  </div>
+                )}
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  {/* Material */}
+                  <div className="form-group">
+                    <label className="form-label">Material *</label>
+                    <select 
+                      className="form-select"
+                      value={newProfile.material}
+                      onChange={(e) => setNewProfile(prev => ({ ...prev, material: e.target.value }))}
+                    >
+                      <option value="ALUMINUM">Aluminum</option>
+                      <option value="STEEL">Steel</option>
+                    </select>
+                  </div>
+                  
+                  {/* Shape Type */}
+                  <div className="form-group">
+                    <label className="form-label">Shape *</label>
+                    <select 
+                      className="form-select"
+                      value={newProfile.type}
+                      onChange={(e) => setNewProfile(prev => ({ ...prev, type: e.target.value, height: '' }))}
+                    >
+                      {profileShapes.map(shape => (
+                        <option key={shape.value} value={shape.value}>{shape.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Width / Diameter */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      {newProfile.type === 'ROUND' ? 'Diameter (mm) *' : 
+                       newProfile.type === 'SQUARE' ? 'Size (mm) *' : 
+                       newProfile.type === 'PLATE' ? 'N/A' : 'Width (mm) *'}
+                    </label>
+                    <input 
+                      type="number" 
+                      className="form-input"
+                      value={newProfile.width}
+                      onChange={(e) => setNewProfile(prev => ({ ...prev, width: e.target.value }))}
+                      disabled={newProfile.type === 'PLATE'}
+                      placeholder={newProfile.type === 'ROUND' ? 'e.g., 30' : 'e.g., 40'}
+                    />
+                  </div>
+                  
+                  {/* Height (only for rectangular/flatbar) */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      {newProfile.type === 'RECTANGULAR' || newProfile.type === 'FLATBAR' ? 'Height (mm) *' : 'Height (mm)'}
+                    </label>
+                    <input 
+                      type="number" 
+                      className="form-input"
+                      value={newProfile.height}
+                      onChange={(e) => setNewProfile(prev => ({ ...prev, height: e.target.value }))}
+                      disabled={newProfile.type === 'ROUND' || newProfile.type === 'SQUARE' || newProfile.type === 'PLATE'}
+                      placeholder={selectedShape?.requiresHeight ? 'e.g., 20' : 'N/A'}
+                    />
+                  </div>
+                  
+                  {/* Thickness - ALWAYS REQUIRED */}
+                  <div className="form-group">
+                    <label className="form-label" style={{ color: '#d32f2f', fontWeight: '600' }}>
+                      Wall Thickness (mm) * <span style={{ fontWeight: 'normal', fontSize: '11px' }}>(Required for tooling)</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      className="form-input"
+                      value={newProfile.thickness}
+                      onChange={(e) => setNewProfile(prev => ({ ...prev, thickness: e.target.value }))}
+                      placeholder="e.g., 1.5"
+                      step="0.1"
+                      style={{ borderColor: '#d32f2f' }}
+                    />
+                  </div>
+                  
+                  {/* Status */}
+                  <div className="form-group">
+                    <label className="form-label">Initial Status</label>
+                    <select 
+                      className="form-select"
+                      value={newProfile.status}
+                      onChange={(e) => setNewProfile(prev => ({ ...prev, status: e.target.value }))}
+                    >
+                      <option value="NEW">NEW (Needs tooling quote)</option>
+                      <option value="REVIEW">REVIEW (Check if needed)</option>
+                      <option value="PRODUCED">PRODUCED (Tooling exists)</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Preview */}
+                <div style={{ background: '#e3f2fd', padding: '12px', borderRadius: '6px', marginTop: '16px', marginBottom: '16px' }}>
+                  <strong>Preview ID: </strong>
+                  <code style={{ background: '#fff', padding: '4px 8px', borderRadius: '4px' }}>
+                    {newProfile.material === 'STEEL' ? 'STL' : 'ALU'}-
+                    {newProfile.type === 'ROUND' ? `TUBE-Ø${newProfile.width || '?'}x${newProfile.thickness || '?'}` :
+                     newProfile.type === 'PLATE' ? `PLATE-${newProfile.thickness || '?'}MM` :
+                     newProfile.type === 'FLATBAR' ? `FLATBAR-${newProfile.width || '?'}x${newProfile.height || '?'}` :
+                     newProfile.type === 'SQUARE' ? `PROFILE-${newProfile.width || '?'}x${newProfile.width || '?'}x${newProfile.thickness || '?'}` :
+                     `PROFILE-${newProfile.width || '?'}x${newProfile.height || '?'}x${newProfile.thickness || '?'}`}
+                  </code>
+                </div>
+                
+                <button 
+                  className="btn btn-primary" 
+                  onClick={addProfile}
+                  disabled={addingProfile || !isConnected}
+                >
+                  {addingProfile ? <><Loader size={16} className="spinner" /> Adding...</> : <><Plus size={16} /> Add Profile</>}
+                </button>
+              </div>
 
-          {currentItems.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-              <Database size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
-              <p>No items in this category</p>
+              {/* Existing Profiles List */}
+              <h4 style={{ marginBottom: '16px' }}>Existing Profiles ({profiles.length})</h4>
+              
+              {profiles.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                  <Wrench size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+                  <p>No profiles in registry</p>
+                </div>
+              ) : (
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Profile ID</th>
+                        <th>Type</th>
+                        <th>Dimensions</th>
+                        <th>Thickness</th>
+                        <th>Status</th>
+                        <th>Used In</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profiles.map((profile, idx) => (
+                        <tr key={idx}>
+                          <td><strong>{profile.profileId}</strong></td>
+                          <td>{profile.type}</td>
+                          <td>
+                            {profile.type === 'ROUND' ? `Ø${profile.width}` :
+                             profile.type === 'PLATE' ? '-' :
+                             `${profile.width}×${profile.height}`}
+                          </td>
+                          <td>{profile.thickness}mm</td>
+                          <td>
+                            <select
+                              value={profile.status}
+                              onChange={(e) => updateProfileStatus(profile.profileId, e.target.value)}
+                              className="form-select"
+                              style={{ 
+                                fontSize: '11px', 
+                                padding: '4px 8px',
+                                background: profile.status === 'PRODUCED' ? '#d4edda' : 
+                                           profile.status === 'NEW' ? '#fff3cd' : '#ffeeba'
+                              }}
+                            >
+                              <option value="NEW">NEW</option>
+                              <option value="REVIEW">REVIEW</option>
+                              <option value="PRODUCED">PRODUCED</option>
+                            </select>
+                          </td>
+                          <td>{profile.productsUsing || 0}</td>
+                          <td>
+                            <button
+                              onClick={() => deleteProfile(profile.profileId)}
+                              disabled={profile.productsUsing > 0}
+                              style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                color: profile.productsUsing > 0 ? '#ccc' : '#ea4335', 
+                                cursor: profile.productsUsing > 0 ? 'not-allowed' : 'pointer',
+                                padding: '4px'
+                              }}
+                              title={profile.productsUsing > 0 ? 'Cannot delete - used in products' : 'Delete profile'}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px' }}>
-              {currentItems.map((item, index) => (
-                <div key={index} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 12px', background: '#f8f9fa', borderRadius: '6px', border: '1px solid #e0e0e0'
-                }}>
-                  {editingItem === index ? (
-                    <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-                      <input type="text" className="form-input" value={editValue} onChange={(e) => setEditValue(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && saveEdit(index)} style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }} autoFocus />
-                      <button onClick={() => saveEdit(index)} style={{ background: 'none', border: 'none', color: '#34a853', cursor: 'pointer' }}><Check size={16} /></button>
-                      <button onClick={() => { setEditingItem(null); setEditValue(''); }} style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer' }}><X size={16} /></button>
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <span style={{ fontSize: '13px', fontWeight: '500' }}>{getDisplayValue(item)}</span>
-                        {getItemType(item) && (
-                          <span style={{ fontSize: '10px', color: '#888', marginLeft: '8px', background: '#e8e8e8', padding: '2px 6px', borderRadius: '3px' }}>
-                            {getItemType(item)}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button onClick={() => startEdit(index, item)} style={{ background: 'none', border: 'none', color: '#1a73e8', cursor: 'pointer', padding: '4px' }}><Edit2 size={14} /></button>
-                        <button onClick={() => removeItem(index)} style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '4px' }}><Trash2 size={14} /></button>
-                      </div>
-                    </>
-                  )}
+            /* NON-PROFILE CATEGORIES - Original Simple Editor */
+            <div>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                <input
+                  type="text" 
+                  className="form-input" 
+                  placeholder={`Add new ${currentCategory?.label?.toLowerCase()}...`}
+                  value={newItem} 
+                  onChange={(e) => setNewItem(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addItem()} 
+                  style={{ flex: 1 }}
+                />
+                <button className="btn btn-primary" onClick={addItem}><Plus size={16} /> Add</button>
+              </div>
+
+              {currentItems.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                  <Database size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+                  <p>No items in this category</p>
                 </div>
-              ))}
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px' }}>
+                  {currentItems.map((item, index) => (
+                    <div key={index} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 12px', background: '#f8f9fa', borderRadius: '6px', border: '1px solid #e0e0e0'
+                    }}>
+                      {editingItem === index ? (
+                        <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                          <input type="text" className="form-input" value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && saveEdit(index)} style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }} autoFocus />
+                          <button onClick={() => saveEdit(index)} style={{ background: 'none', border: 'none', color: '#34a853', cursor: 'pointer' }}><Check size={16} /></button>
+                          <button onClick={() => { setEditingItem(null); setEditValue(''); }} style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer' }}><X size={16} /></button>
+                        </div>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: '13px', fontWeight: '500' }}>{getDisplayValue(item)}</span>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button onClick={() => startEdit(index, item)} style={{ background: 'none', border: 'none', color: '#1a73e8', cursor: 'pointer', padding: '4px' }}><Edit2 size={14} /></button>
+                            <button onClick={() => removeItem(index)} style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '4px' }}><Trash2 size={14} /></button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2872,5 +3239,4 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
     </div>
   );
 }
-
 export default App;
