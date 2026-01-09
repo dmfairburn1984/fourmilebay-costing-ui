@@ -23,7 +23,9 @@ import {
   Check,
   Grid,
   Box,
-  Maximize2
+  Maximize2,
+  Upload,
+  Copy
 } from 'lucide-react';
 
 // ============================================
