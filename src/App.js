@@ -368,19 +368,19 @@ function StatCard({ icon, value, label, color, loading }) {
 }
 
 // ============================================
-// ENHANCED BOM CREATOR - COMPLETE CORRECTED VERSION
-// Version 1.1 - With ALL BOM Fields
+// ENHANCED BOM CREATOR - VERSION 1.2 FINAL
 // ============================================
-// This replaces the existing BOMCreator component in App.js
-// Includes: M, M2, M3, Weight, Total Weight, Density, Note
+// Changes from v1.1:
+// - Profile is now dropdown for ALL component types
+// - Complexity is read-only (default Level 3)
+// - M, M², M³ are ALWAYS visible for all components
 // ============================================
 
-// BOM Creator Component - ENHANCED WITH ALL FIELDS
+// BOM Creator Component - FINAL VERSION
 function BOMCreator({ apiUrl, isConnected }) {
   // Product Information State
   const [productName, setProductName] = useState('');
   const [productType, setProductType] = useState('');
-  const [complexity, setComplexity] = useState('3');
   const [mainMaterial, setMainMaterial] = useState('');
   const [packaging, setPackaging] = useState({ length: '', width: '', height: '' });
   const [components, setComponents] = useState([]);
@@ -389,6 +389,7 @@ function BOMCreator({ apiUrl, isConnected }) {
   
   // Data Libraries State (populated from API)
   const [profiles, setProfiles] = useState([]);
+  const [allProfiles, setAllProfiles] = useState([]); // All profile options including custom
   const [mainComponentOptions, setMainComponentOptions] = useState([]);
   const [partNamesByType, setPartNamesByType] = useState({});
   const [hardwareLibrary, setHardwareLibrary] = useState([]);
@@ -429,12 +430,67 @@ function BOMCreator({ apiUrl, isConnected }) {
     { value: 'TEXTILENE', label: 'Textilene / Batyline', category: 'soft' }
   ];
 
+  // Pre-loaded profile options from BOM analysis
+  const defaultProfileOptions = [
+    // Rectangular Profiles
+    { value: '40x20', label: '40x20', type: 'RECTANGULAR' },
+    { value: '50x20', label: '50x20', type: 'RECTANGULAR' },
+    { value: '50x25', label: '50x25', type: 'RECTANGULAR' },
+    { value: '60x20', label: '60x20', type: 'RECTANGULAR' },
+    { value: '70x70', label: '70x70', type: 'RECTANGULAR' },
+    { value: '70x30', label: '70x30', type: 'RECTANGULAR' },
+    { value: '64x64', label: '64x64', type: 'RECTANGULAR' },
+    { value: '50x50', label: '50x50', type: 'RECTANGULAR' },
+    { value: '40x40', label: '40x40', type: 'RECTANGULAR' },
+    { value: '37x25', label: '37x25', type: 'RECTANGULAR' },
+    { value: '38x10', label: '38x10', type: 'RECTANGULAR' },
+    { value: '38x18.5', label: '38x18.5', type: 'RECTANGULAR' },
+    { value: '30x20', label: '30x20', type: 'RECTANGULAR' },
+    { value: '26x13', label: '26x13', type: 'RECTANGULAR' },
+    { value: '25x25', label: '25x25', type: 'RECTANGULAR' },
+    { value: '20x20', label: '20x20', type: 'RECTANGULAR' },
+    { value: '51x8', label: '51x8', type: 'SLAT' },
+    // Round Tubes
+    { value: 'Ø60', label: 'Ø60', type: 'ROUND' },
+    { value: 'Ø30', label: 'Ø30', type: 'ROUND' },
+    { value: 'Ø25', label: 'Ø25', type: 'ROUND' },
+    { value: 'Ø20', label: 'Ø20', type: 'ROUND' },
+    { value: 'Ø16', label: 'Ø16', type: 'ROUND' },
+    { value: 'Ø12', label: 'Ø12', type: 'ROUND' },
+    // Flat Bars
+    { value: '25x3', label: '25x3', type: 'FLATBAR' },
+    { value: '25x5', label: '25x5', type: 'FLATBAR' },
+    // Plates
+    { value: 'PLATE 3 MM', label: 'PLATE 3 MM', type: 'PLATE' },
+    // Hardware Screw Sizes
+    { value: '6X1/2"', label: '6X1/2"', type: 'SCREW' },
+    { value: '6X3/4"', label: '6X3/4"', type: 'SCREW' },
+    { value: '8X1/2"', label: '8X1/2"', type: 'SCREW' },
+    { value: '8X3/4"', label: '8X3/4"', type: 'SCREW' },
+    { value: '8X1"', label: '8X1"', type: 'SCREW' },
+    { value: '8X1 1/2"', label: '8X1 1/2"', type: 'SCREW' },
+    { value: '8X2"', label: '8X2"', type: 'SCREW' },
+    // Hardware Bolts/Nuts
+    { value: 'M6', label: 'M6', type: 'BOLT' },
+    { value: 'M8', label: 'M8', type: 'BOLT' },
+    { value: 'M6x15', label: 'M6x15', type: 'BOLT' },
+    { value: 'M6x20', label: 'M6x20', type: 'BOLT' },
+    { value: 'M6x40', label: 'M6x40', type: 'BOLT' },
+    { value: 'M6x45', label: 'M6x45', type: 'BOLT' },
+    { value: 'M6x60', label: 'M6x60', type: 'BOLT' },
+    { value: 'M7x70', label: 'M7x70', type: 'BOLT' },
+    { value: 'M8x15', label: 'M8x15', type: 'BOLT' },
+    { value: 'M8x40', label: 'M8x40', type: 'BOLT' },
+    { value: 'M8x50', label: 'M8x50', type: 'BOLT' },
+  ];
+
   // Load all data libraries on mount
   useEffect(() => {
     if (isConnected) {
       loadAllLibraries();
     } else {
       setLoading(false);
+      setAllProfiles(defaultProfileOptions);
     }
   }, [isConnected]);
 
@@ -449,7 +505,26 @@ function BOMCreator({ apiUrl, isConnected }) {
         fetch(`${apiUrl}?action=getFabricReferences`).then(r => r.json())
       ]);
 
-      if (profilesRes.success) setProfiles(profilesRes.profiles.filter(p => p.status === 'PRODUCED'));
+      if (profilesRes.success) {
+        setProfiles(profilesRes.profiles.filter(p => p.status === 'PRODUCED'));
+        // Merge API profiles with default options
+        const apiProfileOptions = profilesRes.profiles.map(p => ({
+          value: p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`,
+          label: p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`,
+          type: p.type
+        }));
+        // Combine and deduplicate
+        const combined = [...defaultProfileOptions];
+        apiProfileOptions.forEach(ap => {
+          if (!combined.find(p => p.value === ap.value)) {
+            combined.push(ap);
+          }
+        });
+        setAllProfiles(combined);
+      } else {
+        setAllProfiles(defaultProfileOptions);
+      }
+      
       if (mainCompRes.success) setMainComponentOptions(mainCompRes.mainComponents);
       if (partNamesRes.success) setPartNamesByType(partNamesRes.partNames);
       if (hardwareRes.success) setHardwareLibrary(hardwareRes.hardware);
@@ -457,8 +532,20 @@ function BOMCreator({ apiUrl, isConnected }) {
       
     } catch (error) {
       console.error('Error loading libraries:', error);
+      setAllProfiles(defaultProfileOptions);
     }
     setLoading(false);
+  };
+
+  // Add new profile to the list (when user types a new one)
+  const addNewProfile = (newProfileValue) => {
+    if (!newProfileValue || allProfiles.find(p => p.value === newProfileValue)) return;
+    
+    setAllProfiles(prev => [...prev, {
+      value: newProfileValue,
+      label: newProfileValue + ' (NEW)',
+      type: 'CUSTOM'
+    }]);
   };
 
   // Search for existing products (for cloning)
@@ -488,7 +575,6 @@ function BOMCreator({ apiUrl, isConnected }) {
         setProductName(data.product.name + ' (Copy)');
         setProductType(data.product.type);
         setMainMaterial(data.product.mainMaterial);
-        setComplexity(String(data.product.complexity || 3));
         
         const clonedComponents = data.components.map((comp, idx) => ({
           id: Date.now() + idx,
@@ -713,12 +799,18 @@ function BOMCreator({ apiUrl, isConnected }) {
           const row = jsonData[i];
           if (!row || !row[0]) continue;
           
+          // Check if profile is new and add it
+          const profileValue = String(row[3] || '').trim();
+          if (profileValue) {
+            addNewProfile(profileValue);
+          }
+          
           parsedComponents.push({
             id: Date.now() + i,
             mainComponent: String(row[0] || '').toUpperCase().trim(),
             subComponent: normalizeSubComponentValue(row[1] || ''),
             partName: String(row[2] || '').toUpperCase().trim(),
-            profile: String(row[3] || '').trim(),
+            profile: profileValue,
             length: String(row[4] || ''),
             width: String(row[5] || ''),
             thickness: String(row[6] || ''),
@@ -761,7 +853,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setUploadFile(null);
   };
 
-  // Submit BOM - WITH ALL FIELDS
+  // Submit BOM - WITH ALL FIELDS, DEFAULT COMPLEXITY 3
   const handleSubmit = async () => {
     if (!productName) {
       alert('Please enter a product name');
@@ -793,7 +885,7 @@ function BOMCreator({ apiUrl, isConnected }) {
         productName,
         productType,
         mainMaterial,
-        complexity: parseInt(complexity),
+        complexity: 3, // ALWAYS DEFAULT TO 3 - Engineering sets this later
         packaging: {
           length: parseFloat(packaging.length) || 0,
           width: parseFloat(packaging.width) || 0,
@@ -847,7 +939,6 @@ function BOMCreator({ apiUrl, isConnected }) {
     setProductName('');
     setProductType('');
     setMainMaterial('');
-    setComplexity('3');
     setPackaging({ length: '', width: '', height: '' });
     setComponents([]);
     setResult(null);
@@ -1020,7 +1111,7 @@ function BOMCreator({ apiUrl, isConnected }) {
               <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.materialCost.toFixed(2)}</div>
             </div>
             <div>
-              <div style={{ fontSize: '12px', color: '#155724' }}>Total Cost</div>
+              <div style={{ fontSize: '12px', color: '#155724' }}>Total Cost (Level 3)</div>
               <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.totalCost.toFixed(2)}</div>
             </div>
             <div>
@@ -1028,6 +1119,9 @@ function BOMCreator({ apiUrl, isConnected }) {
               <div style={{ fontSize: '24px', fontWeight: '600', color: '#155724' }}>${result.sellingPrice.toFixed(2)}</div>
             </div>
           </div>
+          <p style={{ fontSize: '13px', color: '#155724', marginTop: '12px', fontStyle: 'italic' }}>
+            ℹ️ Cost calculated at Complexity Level 3 (Default). Engineering can adjust via Cost Analysis.
+          </p>
           {result.warnings && result.warnings.length > 0 && (
             <div style={{ marginTop: '16px', padding: '12px', background: '#fff3cd', borderRadius: '4px' }}>
               <strong style={{ color: '#856404' }}>Warnings:</strong>
@@ -1092,7 +1186,7 @@ function BOMCreator({ apiUrl, isConnected }) {
             <h3 className="card-title">Upload Excel BOM</h3>
           </div>
           <p style={{ color: '#666', marginBottom: '16px' }}>
-            Upload a factory BOM Excel file with columns: MAIN COMPONENT, SUB COMPONENT, PART NAME, PROFILE, L, W, THICKNESS, QTY, M, M2, M3, WEIGHT, TOTAL WEIGHT, DENSITY, NOTE
+            Upload a factory BOM Excel file. Columns: MAIN COMPONENT, SUB COMPONENT, PART NAME, PROFILE, L, W, THICKNESS, QTY, M, M², M³, WEIGHT, TOTAL WEIGHT, DENSITY, NOTE
           </p>
           
           <div className="upload-zone">
@@ -1216,18 +1310,19 @@ function BOMCreator({ apiUrl, isConnected }) {
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Complexity Level (1-5)</label>
-                <select 
-                  className="form-select"
-                  value={complexity}
-                  onChange={(e) => setComplexity(e.target.value)}
-                >
-                  <option value="1">1 - Simple (20% labor)</option>
-                  <option value="2">2 - Basic (35% labor)</option>
-                  <option value="3">3 - Moderate (50% labor) - DEFAULT</option>
-                  <option value="4">4 - Complex (70% labor)</option>
-                  <option value="5">5 - Very Complex (100% labor)</option>
-                </select>
+                <label className="form-label">Complexity Level</label>
+                <div style={{ 
+                  padding: '10px 12px', 
+                  background: '#f1f3f4', 
+                  borderRadius: '6px', 
+                  color: '#5f6368',
+                  fontSize: '14px'
+                }}>
+                  Level 3 - Moderate (50% labor) <span style={{ fontStyle: 'italic' }}>• Default</span>
+                  <div style={{ fontSize: '11px', marginTop: '4px', color: '#888' }}>
+                    Engineering can adjust complexity in Cost Analysis
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1256,172 +1351,167 @@ function BOMCreator({ apiUrl, isConnected }) {
               </div>
             ) : (
               <div>
+                {/* Table Header */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '120px 100px 130px 80px 55px 55px 50px 45px 55px 55px 65px 55px 60px 70px 1fr 30px',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  background: '#f8f9fa',
+                  borderBottom: '1px solid #e0e0e0',
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  color: '#5f6368',
+                  textTransform: 'uppercase'
+                }}>
+                  <div>Main Comp *</div>
+                  <div>Sub Comp *</div>
+                  <div>Part Name *</div>
+                  <div>Profile</div>
+                  <div>L (mm)</div>
+                  <div>W (mm)</div>
+                  <div>T (mm)</div>
+                  <div>Qty</div>
+                  <div>M</div>
+                  <div>M²</div>
+                  <div>M³</div>
+                  <div>Weight</div>
+                  <div>Tot.Wt</div>
+                  <div>Density</div>
+                  <div>Note</div>
+                  <div></div>
+                </div>
+                
                 {components.map((comp, index) => (
                   <div 
                     key={comp.id} 
                     className={`bom-row ${similarMatches[comp.id] && !comp.isConfirmedNew && !comp.isExisting ? 'bom-row-warning' : ''}`}
+                    style={{ padding: '8px 16px' }}
                   >
-                    {/* Row 1: Core fields */}
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
-                      <div className="form-group" style={{ minWidth: '130px', flex: '1', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Main Component *</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          list={`main-comp-${comp.id}`}
-                          placeholder="e.g., LEGS"
-                          value={comp.mainComponent}
-                          onChange={(e) => updateComponent(comp.id, 'mainComponent', e.target.value.toUpperCase())}
-                        />
-                        <datalist id={`main-comp-${comp.id}`}>
-                          {mainComponentOptions.map(mc => <option key={mc} value={mc} />)}
-                        </datalist>
-                      </div>
+                    {/* Component Row - Grid Layout */}
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '120px 100px 130px 80px 55px 55px 50px 45px 55px 55px 65px 55px 60px 70px 1fr 30px',
+                      gap: '6px',
+                      alignItems: 'center'
+                    }}>
+                      {/* Main Component */}
+                      <input
+                        type="text"
+                        className="form-input"
+                        list={`main-comp-${comp.id}`}
+                        placeholder="LEGS"
+                        value={comp.mainComponent}
+                        onChange={(e) => updateComponent(comp.id, 'mainComponent', e.target.value.toUpperCase())}
+                        style={{ fontSize: '12px', padding: '6px 8px' }}
+                      />
+                      <datalist id={`main-comp-${comp.id}`}>
+                        {mainComponentOptions.map(mc => <option key={mc} value={mc} />)}
+                      </datalist>
                       
-                      <div className="form-group" style={{ minWidth: '120px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Sub Component *</label>
-                        <select
-                          className="form-select"
-                          value={comp.subComponent}
-                          onChange={(e) => updateComponent(comp.id, 'subComponent', e.target.value)}
-                        >
-                          {subComponentOptions.map(sc => (
-                            <option key={sc.value} value={sc.value}>{sc.label}</option>
-                          ))}
-                        </select>
-                      </div>
+                      {/* Sub Component */}
+                      <select
+                        className="form-select"
+                        value={comp.subComponent}
+                        onChange={(e) => updateComponent(comp.id, 'subComponent', e.target.value)}
+                        style={{ fontSize: '12px', padding: '6px 4px' }}
+                      >
+                        {subComponentOptions.map(sc => (
+                          <option key={sc.value} value={sc.value}>{sc.label}</option>
+                        ))}
+                      </select>
                       
-                      <div className="form-group" style={{ minWidth: '140px', flex: '1', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Part Name *</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          list={`part-name-${comp.id}`}
-                          placeholder="e.g., SLAT 1"
-                          value={comp.partName}
-                          onChange={(e) => updateComponent(comp.id, 'partName', e.target.value.toUpperCase())}
-                        />
-                        <datalist id={`part-name-${comp.id}`}>
-                          {getPartNameSuggestions(comp.subComponent).map(pn => <option key={pn} value={pn} />)}
-                        </datalist>
-                      </div>
+                      {/* Part Name */}
+                      <input
+                        type="text"
+                        className="form-input"
+                        list={`part-name-${comp.id}`}
+                        placeholder="SLAT 1"
+                        value={comp.partName}
+                        onChange={(e) => updateComponent(comp.id, 'partName', e.target.value.toUpperCase())}
+                        style={{ fontSize: '12px', padding: '6px 8px' }}
+                      />
+                      <datalist id={`part-name-${comp.id}`}>
+                        {getPartNameSuggestions(comp.subComponent).map(pn => <option key={pn} value={pn} />)}
+                      </datalist>
                       
-                      <div className="form-group" style={{ width: '90px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '11px' }}>Profile</label>
-                        {comp.subComponent === 'ALUMINUM' ? (
-                          <select
-                            className="form-select"
-                            value={comp.profile}
-                            onChange={(e) => updateComponent(comp.id, 'profile', e.target.value)}
-                          >
-                            <option value="">Select...</option>
-                            {profiles.map(p => (
-                              <option key={p.id} value={p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`}>
-                                {p.type === 'ROUND' ? `Ø${p.width}` : `${p.width}x${p.height}`}
-                              </option>
-                            ))}
-                            <option value="PLATE 3 MM">PLATE 3MM</option>
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder=""
-                            value={comp.profile || ''}
-                            onChange={(e) => updateComponent(comp.id, 'profile', e.target.value)}
-                          />
-                        )}
-                      </div>
+                      {/* Profile - DROPDOWN FOR ALL */}
+                      <select
+                        className="form-select"
+                        value={comp.profile}
+                        onChange={(e) => {
+                          if (e.target.value === '__ADD_NEW__') {
+                            const newProfile = prompt('Enter new profile dimension:');
+                            if (newProfile) {
+                              addNewProfile(newProfile);
+                              updateComponent(comp.id, 'profile', newProfile);
+                            }
+                          } else {
+                            updateComponent(comp.id, 'profile', e.target.value);
+                          }
+                        }}
+                        style={{ fontSize: '11px', padding: '6px 2px' }}
+                      >
+                        <option value="">-</option>
+                        {allProfiles.map(p => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                        <option value="__ADD_NEW__">+ Add New...</option>
+                      </select>
                       
+                      {/* L (mm) */}
+                      <input type="number" className="form-input" value={comp.length || ''} onChange={(e) => updateComponent(comp.id, 'length', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* W (mm) */}
+                      <input type="number" className="form-input" value={comp.width || ''} onChange={(e) => updateComponent(comp.id, 'width', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* T (mm) */}
+                      <input type="number" className="form-input" value={comp.thickness || ''} onChange={(e) => updateComponent(comp.id, 'thickness', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* Qty */}
+                      <input type="number" className="form-input" value={comp.qty || '1'} min="1" onChange={(e) => updateComponent(comp.id, 'qty', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* M (metre length) - ALWAYS VISIBLE */}
+                      <input type="number" className="form-input" value={comp.m || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'm', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* M² (metre square) - ALWAYS VISIBLE */}
+                      <input type="number" className="form-input" value={comp.m2 || ''} step="0.0001" onChange={(e) => updateComponent(comp.id, 'm2', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* M³ (metre cubic) - ALWAYS VISIBLE */}
+                      <input type="number" className="form-input" value={comp.m3 || ''} step="0.000001" onChange={(e) => updateComponent(comp.id, 'm3', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* Weight */}
+                      <input type="number" className="form-input" value={comp.weight || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'weight', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* Total Weight */}
+                      <input type="number" className="form-input" value={comp.totalWeight || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'totalWeight', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* Density */}
+                      <input type="text" className="form-input" value={comp.density || ''} onChange={(e) => updateComponent(comp.id, 'density', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* Note */}
+                      <input type="text" className="form-input" value={comp.note || ''} placeholder="Note..." onChange={(e) => updateComponent(comp.id, 'note', e.target.value)} style={{ fontSize: '12px', padding: '6px 4px' }} />
+                      
+                      {/* Delete */}
                       <button
                         onClick={() => removeComponent(comp.id)}
-                        style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '8px' }}
+                        style={{ background: 'none', border: 'none', color: '#ea4335', cursor: 'pointer', padding: '4px' }}
                       >
-                        <X size={18} />
+                        <X size={16} />
                       </button>
-                    </div>
-                    
-                    {/* Row 2: Dimensions and Measurements */}
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                      {!['HARDWARE', 'ACCESSORIES'].includes(comp.subComponent) && (
-                        <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '10px' }}>L (mm)</label>
-                          <input type="number" className="form-input" value={comp.length || ''} onChange={(e) => updateComponent(comp.id, 'length', e.target.value)} />
-                        </div>
-                      )}
-                      
-                      {!['HARDWARE', 'ACCESSORIES', 'ROPE', 'ALUMINUM'].includes(comp.subComponent) && (
-                        <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '10px' }}>W (mm)</label>
-                          <input type="number" className="form-input" value={comp.width || ''} onChange={(e) => updateComponent(comp.id, 'width', e.target.value)} />
-                        </div>
-                      )}
-                      
-                      {['TEAK', 'ACACIA', 'EUCALYPTUS', 'KAMERERE', 'FOAM'].includes(comp.subComponent) && (
-                        <div className="form-group" style={{ width: '55px', marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '10px' }}>T (mm)</label>
-                          <input type="number" className="form-input" value={comp.thickness || ''} onChange={(e) => updateComponent(comp.id, 'thickness', e.target.value)} />
-                        </div>
-                      )}
-                      
-                      <div className="form-group" style={{ width: '50px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '10px' }}>Qty</label>
-                        <input type="number" className="form-input" value={comp.qty || '1'} min="1" onChange={(e) => updateComponent(comp.id, 'qty', e.target.value)} />
-                      </div>
-                      
-                      {['ALUMINUM', 'ROPE', 'ACCESSORIES'].includes(comp.subComponent) && (
-                        <div className="form-group" style={{ width: '60px', marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '10px' }}>M</label>
-                          <input type="number" className="form-input" value={comp.m || ''} step="0.01" onChange={(e) => updateComponent(comp.id, 'm', e.target.value)} />
-                        </div>
-                      )}
-                      
-                      {['FABRIC', 'CUSHION INSERT', 'TEXTILENE'].includes(comp.subComponent) && (
-                        <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '10px' }}>M²</label>
-                          <input type="number" className="form-input" value={comp.m2 || ''} step="0.0001" onChange={(e) => updateComponent(comp.id, 'm2', e.target.value)} />
-                        </div>
-                      )}
-                      
-                      {['TEAK', 'ACACIA', 'EUCALYPTUS', 'KAMERERE', 'FOAM'].includes(comp.subComponent) && (
-                        <div className="form-group" style={{ width: '70px', marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '10px' }}>M³</label>
-                          <input type="number" className="form-input" value={comp.m3 || ''} step="0.000001" onChange={(e) => updateComponent(comp.id, 'm3', e.target.value)} />
-                        </div>
-                      )}
-                      
-                      <div className="form-group" style={{ width: '60px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '10px' }}>Weight</label>
-                        <input type="number" className="form-input" value={comp.weight || ''} step="0.01" placeholder="kg" onChange={(e) => updateComponent(comp.id, 'weight', e.target.value)} />
-                      </div>
-                      
-                      <div className="form-group" style={{ width: '65px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '10px' }}>Tot.Wt</label>
-                        <input type="number" className="form-input" value={comp.totalWeight || ''} step="0.01" placeholder="kg" onChange={(e) => updateComponent(comp.id, 'totalWeight', e.target.value)} />
-                      </div>
-                      
-                      <div className="form-group" style={{ width: '80px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '10px' }}>Density</label>
-                        <input type="text" className="form-input" value={comp.density || ''} placeholder="" onChange={(e) => updateComponent(comp.id, 'density', e.target.value)} />
-                      </div>
-                      
-                      <div className="form-group" style={{ flex: '1', minWidth: '120px', marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontSize: '10px' }}>Note</label>
-                        <input type="text" className="form-input" value={comp.note || ''} placeholder="e.g., 2-Tenon @20mm" onChange={(e) => updateComponent(comp.id, 'note', e.target.value)} />
-                      </div>
                     </div>
                     
                     {renderSimilarWarning(comp.id)}
                     
                     {comp.isExisting && (
-                      <div className="badge-existing" style={{ marginTop: '8px' }}>
-                        ✓ Using existing: {comp.componentId}
+                      <div className="badge-existing" style={{ marginTop: '4px', fontSize: '11px' }}>
+                        ✓ Using: {comp.componentId}
                       </div>
                     )}
                     
                     {comp.isConfirmedNew && (
-                      <div className="badge-new" style={{ marginTop: '8px' }}>
-                        ✓ Creating new component
+                      <div className="badge-new" style={{ marginTop: '4px', fontSize: '11px' }}>
+                        ✓ New component
                       </div>
                     )}
                   </div>
@@ -1476,12 +1566,31 @@ function BOMCreator({ apiUrl, isConnected }) {
   );
 }
 
+// ============================================
+// ENHANCED COST ANALYSIS - WITH COMPLEXITY CONTROL
+// ============================================
+// This replaces the existing CostAnalysis component in App.js
+// Engineering can adjust complexity levels and create cost versions
+// ============================================
 
-// Cost Analysis Component
 function CostAnalysis({ apiUrl, isConnected }) {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productDetails, setProductDetails] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recalculating, setRecalculating] = useState(false);
+  const [costVersions, setCostVersions] = useState([]);
+  const [selectedComplexity, setSelectedComplexity] = useState(3);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+
+  // Complexity level definitions
+  const complexityLevels = [
+    { value: 1, label: 'Level 1 - Simple', laborPercent: 20, description: 'Flat surfaces, minimal assembly' },
+    { value: 2, label: 'Level 2 - Basic', laborPercent: 35, description: 'Basic joinery, simple frames' },
+    { value: 3, label: 'Level 3 - Moderate', laborPercent: 50, description: 'Standard furniture, multiple components' },
+    { value: 4, label: 'Level 4 - Complex', laborPercent: 70, description: 'Curved elements, intricate joinery' },
+    { value: 5, label: 'Level 5 - Very Complex', laborPercent: 100, description: 'Artistic, highly detailed work' }
+  ];
 
   useEffect(() => {
     if (isConnected) {
@@ -1492,6 +1601,7 @@ function CostAnalysis({ apiUrl, isConnected }) {
   }, [isConnected]);
 
   const fetchProducts = async () => {
+    setLoading(true);
     try {
       const res = await fetch(`${apiUrl}?action=getProducts`);
       const data = await res.json();
@@ -1499,187 +1609,467 @@ function CostAnalysis({ apiUrl, isConnected }) {
         setProducts(data.products);
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching products:', error);
     }
     setLoading(false);
   };
 
-  const selectProduct = async (code) => {
+  const fetchProductDetails = async (productCode) => {
     try {
-      const res = await fetch(`${apiUrl}?action=getProduct&code=${code}`);
+      const res = await fetch(`${apiUrl}?action=getProductDetails&code=${encodeURIComponent(productCode)}`);
       const data = await res.json();
       if (data.success) {
-        setSelectedProduct(data.product);
+        setProductDetails(data);
+        setSelectedComplexity(data.complexity || 3);
+        // Fetch cost versions
+        fetchCostVersions(productCode);
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching product details:', error);
     }
   };
 
-  return (
-    <div>
-      <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '24px' }}>Cost Analysis</h2>
+  const fetchCostVersions = async (productCode) => {
+    try {
+      const res = await fetch(`${apiUrl}?action=getCostVersions&code=${encodeURIComponent(productCode)}`);
+      const data = await res.json();
+      if (data.success) {
+        setCostVersions(data.versions || []);
+      }
+    } catch (error) {
+      console.error('Error fetching cost versions:', error);
+      setCostVersions([]);
+    }
+  };
+
+  const handleSelectProduct = (product) => {
+    setSelectedProduct(product);
+    fetchProductDetails(product.code);
+  };
+
+  const handleBackToProducts = () => {
+    setSelectedProduct(null);
+    setProductDetails(null);
+    setCostVersions([]);
+    setShowVersionHistory(false);
+  };
+
+  // Recalculate costs with new complexity level
+  const recalculateWithComplexity = async (newComplexity) => {
+    if (!selectedProduct) return;
+    
+    setRecalculating(true);
+    
+    try {
+      const payload = {
+        productCode: selectedProduct.code,
+        newComplexity: newComplexity,
+        createVersion: true // Always create a new version
+      };
       
-      {!selectedProduct ? (
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">Select a Product to Analyze</h3>
+      const encodedData = encodeURIComponent(JSON.stringify(payload));
+      const res = await fetch(`${apiUrl}?action=recalculateCost&data=${encodedData}`);
+      const data = await res.json();
+      
+      if (data.success) {
+        // Update local state with new calculations
+        setProductDetails(prev => ({
+          ...prev,
+          complexity: newComplexity,
+          laborCost: data.laborCost,
+          totalCost: data.totalCost,
+          sellingPrice: data.sellingPrice,
+          factoryProfit: data.factoryProfit,
+          yourProfit: data.yourProfit
+        }));
+        
+        setSelectedComplexity(newComplexity);
+        
+        // Refresh cost versions
+        fetchCostVersions(selectedProduct.code);
+        
+        // Update product in list
+        setProducts(prev => prev.map(p => 
+          p.code === selectedProduct.code 
+            ? { ...p, complexity: newComplexity, totalCost: data.totalCost, sellingPrice: data.sellingPrice }
+            : p
+        ));
+        
+        alert(`Cost recalculated at Complexity Level ${newComplexity}. New version saved.`);
+      } else {
+        alert('Error recalculating: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error recalculating:', error);
+      alert('Error recalculating cost: ' + error.message);
+    }
+    
+    setRecalculating(false);
+  };
+
+  // Calculate preview of costs at different complexity levels
+  const calculatePreview = (complexityLevel) => {
+    if (!productDetails) return null;
+    
+    const materialCost = productDetails.materialCost || 0;
+    const laborPercent = complexityLevels.find(c => c.value === complexityLevel)?.laborPercent || 50;
+    
+    const laborCost = materialCost * (laborPercent / 100);
+    const overhead = (materialCost + laborCost) * 0.20;
+    const packagingCost = productDetails.packagingCost || 0;
+    const subtotal = materialCost + laborCost + overhead + packagingCost;
+    const factoryProfit = subtotal * 0.07;
+    const totalCost = subtotal + factoryProfit;
+    const sellingPrice = totalCost * 1.24;
+    const yourProfit = sellingPrice - totalCost;
+    
+    return {
+      laborCost,
+      overhead,
+      totalCost,
+      sellingPrice,
+      yourProfit
+    };
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '60px' }}>
+        <Loader size={48} className="spinner" style={{ color: '#1a73e8' }} />
+        <p style={{ marginTop: '16px', color: '#666' }}>Loading products...</p>
+      </div>
+    );
+  }
+
+  // Product Detail View
+  if (selectedProduct && productDetails) {
+    const currentLevel = complexityLevels.find(c => c.value === selectedComplexity);
+    
+    return (
+      <div>
+        <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '24px' }}>Cost Analysis</h2>
+        
+        <button 
+          className="btn btn-secondary" 
+          onClick={handleBackToProducts}
+          style={{ marginBottom: '24px' }}
+        >
+          ← Back to Products
+        </button>
+
+        {/* Cost Summary Cards */}
+        <div className="grid-3" style={{ marginBottom: '24px' }}>
+          <div className="cost-summary" style={{ background: 'linear-gradient(135deg, #1a73e8, #4285f4)' }}>
+            <div className="cost-summary-title">TOTAL COST</div>
+            <div className="cost-summary-value">${productDetails.totalCost?.toFixed(2) || '0.00'}</div>
+            <div className="cost-summary-subtitle">Factory price</div>
           </div>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px' }}>
-              <Loader size={32} className="spinner" style={{ color: '#1a73e8' }} />
+          <div className="cost-summary" style={{ background: 'linear-gradient(135deg, #34a853, #4caf50)' }}>
+            <div className="cost-summary-title">SELLING PRICE</div>
+            <div className="cost-summary-value">${productDetails.sellingPrice?.toFixed(2) || '0.00'}</div>
+            <div className="cost-summary-subtitle">+24% margin</div>
+          </div>
+          <div className="cost-summary" style={{ background: 'linear-gradient(135deg, #5f6368, #757575)' }}>
+            <div className="cost-summary-title">YOUR PROFIT</div>
+            <div className="cost-summary-value">${((productDetails.sellingPrice || 0) - (productDetails.totalCost || 0)).toFixed(2)}</div>
+            <div className="cost-summary-subtitle">Per unit</div>
+          </div>
+        </div>
+
+        {/* Product Info & Complexity Control */}
+        <div className="grid-2" style={{ gap: '24px', marginBottom: '24px' }}>
+          {/* Cost Breakdown */}
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">{productDetails.name || selectedProduct.name}</h3>
             </div>
-          ) : products.length > 0 ? (
-            <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Amount</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1. Material Cost</td>
+                  <td>${productDetails.materialCost?.toFixed(2) || '0.00'}</td>
+                  <td>Sum of {productDetails.componentCount || 0} components</td>
+                </tr>
+                <tr>
+                  <td>2. Labor Cost</td>
+                  <td>${productDetails.laborCost?.toFixed(2) || '0.00'}</td>
+                  <td>Complexity Level {selectedComplexity} ({currentLevel?.laborPercent}%)</td>
+                </tr>
+                <tr>
+                  <td>3. Overhead</td>
+                  <td>${productDetails.overhead?.toFixed(2) || '0.00'}</td>
+                  <td>20% of (Materials + Labor)</td>
+                </tr>
+                <tr>
+                  <td>4. Packaging</td>
+                  <td>${productDetails.packagingCost?.toFixed(2) || '0.00'}</td>
+                  <td>Box surface area</td>
+                </tr>
+                <tr>
+                  <td>5. Factory Profit</td>
+                  <td>${productDetails.factoryProfit?.toFixed(2) || '0.00'}</td>
+                  <td>7% margin</td>
+                </tr>
+                <tr style={{ background: '#e8f5e9', fontWeight: '600' }}>
+                  <td>TOTAL COST</td>
+                  <td>${productDetails.totalCost?.toFixed(2) || '0.00'}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Complexity Control - ENGINEERING */}
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">⚙️ Engineering: Complexity Control</h3>
+            </div>
+            <p style={{ color: '#666', fontSize: '14px', marginBottom: '16px' }}>
+              Adjust complexity level to recalculate labor costs. Each change creates a new cost version.
+            </p>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label className="form-label">Current Complexity Level</label>
+              <div style={{ 
+                padding: '12px 16px', 
+                background: '#e8f0fe', 
+                borderRadius: '8px',
+                border: '2px solid #1a73e8',
+                marginBottom: '12px'
+              }}>
+                <div style={{ fontWeight: '600', color: '#1a73e8' }}>
+                  {currentLevel?.label}
+                </div>
+                <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
+                  {currentLevel?.description}
+                </div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                  Labor = {currentLevel?.laborPercent}% of material cost
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label className="form-label">Recalculate at Different Level</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {complexityLevels.map(level => {
+                  const preview = calculatePreview(level.value);
+                  const isCurrentLevel = level.value === selectedComplexity;
+                  
+                  return (
+                    <div 
+                      key={level.value}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 12px',
+                        background: isCurrentLevel ? '#e8f0fe' : '#f8f9fa',
+                        borderRadius: '6px',
+                        border: isCurrentLevel ? '2px solid #1a73e8' : '1px solid #e0e0e0',
+                        opacity: isCurrentLevel ? 0.7 : 1
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '500', fontSize: '13px' }}>
+                          {level.label}
+                          {isCurrentLevel && <span style={{ color: '#1a73e8', marginLeft: '8px' }}>(Current)</span>}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#888' }}>
+                          Labor: {level.laborPercent}% → ${preview?.laborCost.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                          ${preview?.totalCost.toFixed(2)}
+                        </div>
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: '11px', padding: '4px 10px', marginTop: '4px' }}
+                          disabled={isCurrentLevel || recalculating}
+                          onClick={() => recalculateWithComplexity(level.value)}
+                        >
+                          {recalculating ? 'Processing...' : 'Apply'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Version History Toggle */}
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => setShowVersionHistory(!showVersionHistory)}
+              style={{ width: '100%' }}
+            >
+              {showVersionHistory ? 'Hide' : 'Show'} Cost Version History ({costVersions.length})
+            </button>
+          </div>
+        </div>
+
+        {/* Cost Version History */}
+        {showVersionHistory && (
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">📋 Cost Version History</h3>
+            </div>
+            {costVersions.length === 0 ? (
+              <p style={{ color: '#666', textAlign: 'center', padding: '20px' }}>
+                No version history available yet.
+              </p>
+            ) : (
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Date</th>
+                    <th>Complexity</th>
+                    <th>Material Cost</th>
+                    <th>Labor Cost</th>
                     <th>Total Cost</th>
-                    <th>Action</th>
+                    <th>Selling Price</th>
+                    <th>Changed By</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map(p => (
-                    <tr key={p.code}>
-                      <td>{p.code}</td>
-                      <td>{p.name}</td>
-                      <td>${p.totalCost.toFixed(2)}</td>
+                  {costVersions.map((version, idx) => (
+                    <tr key={idx} style={{ background: idx === 0 ? '#e8f5e9' : 'transparent' }}>
                       <td>
-                        <button 
-                          className="btn btn-primary" 
-                          style={{ padding: '6px 12px', fontSize: '13px' }}
-                          onClick={() => selectProduct(p.code)}
-                        >
-                          Analyze
-                        </button>
+                        <strong>v{version.version || costVersions.length - idx}</strong>
+                        {idx === 0 && <span className="badge badge-complete" style={{ marginLeft: '8px' }}>Current</span>}
                       </td>
+                      <td>{version.date || 'N/A'}</td>
+                      <td>Level {version.complexity}</td>
+                      <td>${version.materialCost?.toFixed(2) || '0.00'}</td>
+                      <td>${version.laborCost?.toFixed(2) || '0.00'}</td>
+                      <td><strong>${version.totalCost?.toFixed(2) || '0.00'}</strong></td>
+                      <td>${version.sellingPrice?.toFixed(2) || '0.00'}</td>
+                      <td>{version.changedBy || 'System'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            )}
+          </div>
+        )}
+
+        {/* BOM Components */}
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">BOM Components</h3>
+          </div>
+          {productDetails.components && productDetails.components.length > 0 ? (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Main Component</th>
+                  <th>Sub Component</th>
+                  <th>Part Name</th>
+                  <th>Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productDetails.components.map((comp, idx) => (
+                  <tr key={idx}>
+                    <td>{comp.mainComponent}</td>
+                    <td>{comp.subComponent}</td>
+                    <td>{comp.partName}</td>
+                    <td>{comp.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
-            <p style={{ textAlign: 'center', padding: '40px', color: '#5f6368' }}>
-              {isConnected ? 'No products found' : 'Connect to Google Sheets to see products'}
+            <p style={{ color: '#666', textAlign: 'center', padding: '20px' }}>
+              No component details available.
             </p>
           )}
         </div>
+      </div>
+    );
+  }
+
+  // Products List View
+  return (
+    <div>
+      <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '24px' }}>Cost Analysis</h2>
+      
+      {!isConnected ? (
+        <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+          <AlertTriangle size={48} color="#ffc107" style={{ marginBottom: '16px' }} />
+          <p>Connect to Google Sheets to view cost analysis</p>
+        </div>
+      ) : products.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+          <Package size={48} color="#999" style={{ marginBottom: '16px' }} />
+          <p>No products found. Create a BOM first.</p>
+        </div>
       ) : (
-        <>
-          <button 
-            className="btn btn-secondary" 
-            onClick={() => setSelectedProduct(null)}
-            style={{ marginBottom: '16px' }}
-          >
-            ← Back to Products
-          </button>
-
-          {/* Cost Summary */}
-          <div className="grid-3" style={{ marginBottom: '24px' }}>
-            <div className="cost-summary">
-              <div className="cost-summary-title">TOTAL COST</div>
-              <div className="cost-summary-value">${selectedProduct.totalCost.toFixed(2)}</div>
-              <div className="cost-summary-subtitle">Factory price</div>
-            </div>
-            <div className="cost-summary" style={{ background: 'linear-gradient(135deg, #34a853, #4caf50)' }}>
-              <div className="cost-summary-title">SELLING PRICE</div>
-              <div className="cost-summary-value">${selectedProduct.sellingPrice.toFixed(2)}</div>
-              <div className="cost-summary-subtitle">+24% margin</div>
-            </div>
-            <div className="cost-summary" style={{ background: 'linear-gradient(135deg, #5f6368, #757575)' }}>
-              <div className="cost-summary-title">YOUR PROFIT</div>
-              <div className="cost-summary-value">${selectedProduct.yourProfit.toFixed(2)}</div>
-              <div className="cost-summary-subtitle">Per unit</div>
-            </div>
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">Select Product for Analysis</h3>
           </div>
-
-          {/* Cost Breakdown */}
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">{selectedProduct.name}</h3>
-            </div>
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>Amount</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>1. Material Cost</td>
-                    <td>${selectedProduct.materialCost.toFixed(2)}</td>
-                    <td>Sum of {selectedProduct.componentCount} components</td>
-                  </tr>
-                  <tr>
-                    <td>2. Labor Cost</td>
-                    <td>${selectedProduct.laborCost.toFixed(2)}</td>
-                    <td>Complexity Level {selectedProduct.complexity}</td>
-                  </tr>
-                  <tr>
-                    <td>3. Overhead</td>
-                    <td>${selectedProduct.overhead.toFixed(2)}</td>
-                    <td>20% of (Materials + Labor)</td>
-                  </tr>
-                  <tr>
-                    <td>4. Packaging</td>
-                    <td>${selectedProduct.packaging.toFixed(2)}</td>
-                    <td>Box surface area</td>
-                  </tr>
-                  <tr>
-                    <td>5. Factory Profit</td>
-                    <td>${selectedProduct.factoryProfit.toFixed(2)}</td>
-                    <td>7% margin</td>
-                  </tr>
-                  <tr style={{ background: '#e8f0fe', fontWeight: '600' }}>
-                    <td>TOTAL COST</td>
-                    <td>${selectedProduct.totalCost.toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* BOM Components */}
-          {selectedProduct.components && selectedProduct.components.length > 0 && (
-            <div className="card">
-              <div className="card-header">
-                <h3 className="card-title">BOM Components</h3>
-              </div>
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Main Component</th>
-                      <th>Sub Component</th>
-                      <th>Part Name</th>
-                      <th>Qty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedProduct.components.map((comp, i) => (
-                      <tr key={i}>
-                        <td>{comp.mainComponent}</td>
-                        <td>{comp.subComponent}</td>
-                        <td>{comp.partName}</td>
-                        <td>{comp.qty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Product Name</th>
+                <th>Type</th>
+                <th>Complexity</th>
+                <th>Material Cost</th>
+                <th>Total Cost</th>
+                <th>Selling Price</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(product => (
+                <tr key={product.code}>
+                  <td><strong>{product.code}</strong></td>
+                  <td>{product.name}</td>
+                  <td>{product.type}</td>
+                  <td>
+                    <span className={`badge ${product.complexity ? 'badge-complete' : 'badge-new'}`}>
+                      {product.complexity ? `Level ${product.complexity}` : 'Not Set'}
+                    </span>
+                  </td>
+                  <td>${product.materialCost?.toFixed(2) || '0.00'}</td>
+                  <td><strong>${product.totalCost?.toFixed(2) || '0.00'}</strong></td>
+                  <td>${product.sellingPrice?.toFixed(2) || '0.00'}</td>
+                  <td>
+                    <span className={`badge ${product.status === 'Costed' ? 'badge-complete' : 'badge-incomplete'}`}>
+                      {product.status || 'Unknown'}
+                    </span>
+                  </td>
+                  <td>
+                    <button 
+                      className="btn btn-primary" 
+                      style={{ fontSize: '12px', padding: '6px 12px' }}
+                      onClick={() => handleSelectProduct(product)}
+                    >
+                      Analyze
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
+
 
 // Profile Registry Component
 function ProfileRegistry({ apiUrl, isConnected }) {
