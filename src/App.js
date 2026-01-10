@@ -439,6 +439,7 @@ function BOMCreator({ apiUrl, isConnected }) {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [validationErrors, setValidationErrors] = useState([]);
 
   const subComponentOptions = [
     { value: 'ALUMINUM', label: 'Aluminum', category: 'metal' },
@@ -589,6 +590,83 @@ function BOMCreator({ apiUrl, isConnected }) {
       setAllProfiles(defaultProfileOptions);
     }
     setLoading(false);
+  };
+
+  // Validate components against taxonomy
+  const validateComponentsAgainstTaxonomy = (componentsToValidate) => {
+    const errors = [];
+    
+    // Get valid values from taxonomy
+    const validSubComponents = subComponentOptions.map(s => s.value.toUpperCase());
+    const validMainComponents = mainComponentOptions.map(m => m.toUpperCase());
+    const validProfiles = allProfiles.map(p => p.value.toUpperCase());
+    
+    // Track unique missing items
+    const missingSubComponents = new Set();
+    const missingMainComponents = new Set();
+    const missingProfiles = new Set();
+    
+    componentsToValidate.forEach((comp, index) => {
+      const subComp = String(comp.subComponent || '').toUpperCase();
+      const mainComp = String(comp.mainComponent || '').toUpperCase();
+      const profile = String(comp.profile || '').toUpperCase();
+      
+      // Check sub-component (material type)
+      if (subComp && !validSubComponents.includes(subComp)) {
+        missingSubComponents.add(subComp);
+      }
+      
+      // Check main component (if we have options loaded)
+      if (mainComp && validMainComponents.length > 0 && !validMainComponents.includes(mainComp)) {
+        missingMainComponents.add(mainComp);
+      }
+      
+      // Check profile (only for aluminum/steel, and only if profile is specified)
+      if (profile && (subComp === 'ALUMINUM' || subComp === 'STEEL')) {
+        // Profile validation - check if it exists
+        const profileExists = validProfiles.some(p => {
+          // Match by dimensions (e.g., "40x20" should match "ALU-PROFILE-40x20x1.5")
+          return p.includes(profile) || profile.includes(p.replace('ALU-PROFILE-', '').replace('ALU-TUBE-', '').replace('STL-PROFILE-', ''));
+        });
+        
+        if (!profileExists && profile !== '' && profile !== '-') {
+          missingProfiles.add(profile);
+        }
+      }
+    });
+    
+    // Build error messages
+    if (missingSubComponents.size > 0) {
+      errors.push({
+        type: 'Sub Component',
+        location: 'Taxonomy Library → Sub Components',
+        items: Array.from(missingSubComponents),
+        severity: 'critical',
+        message: `Unknown material type(s): ${Array.from(missingSubComponents).join(', ')}. Add to Taxonomy Library → Sub Components before proceeding.`
+      });
+    }
+    
+    if (missingMainComponents.size > 0) {
+      errors.push({
+        type: 'Main Component',
+        location: 'Taxonomy Library → Main Components',
+        items: Array.from(missingMainComponents),
+        severity: 'warning',
+        message: `New main component(s): ${Array.from(missingMainComponents).join(', ')}. Consider adding to Taxonomy Library → Main Components.`
+      });
+    }
+    
+    if (missingProfiles.size > 0) {
+      errors.push({
+        type: 'Profile',
+        location: 'Taxonomy Library → Profiles',
+        items: Array.from(missingProfiles),
+        severity: 'warning',
+        message: `Unknown profile(s): ${Array.from(missingProfiles).join(', ')}. Add to Taxonomy Library → Profiles with thickness.`
+      });
+    }
+    
+    return errors;
   };
 
   // Add new profile to the list
@@ -880,11 +958,16 @@ function BOMCreator({ apiUrl, isConnected }) {
         
         const fileName = file.name.replace(/^BOM_/, '').replace(/\.xlsx?$/i, '').replace(/_/g, ' ');
         
+        // Validate components against taxonomy
+        const errors = validateComponentsAgainstTaxonomy(parsedComponents);
+        setValidationErrors(errors);
+        
         setUploadPreview({
           fileName: file.name,
           productName: fileName,
           componentCount: parsedComponents.length,
-          components: parsedComponents
+          components: parsedComponents,
+          hasErrors: errors.some(e => e.severity === 'critical')
         });
         
       } catch (error) {
@@ -898,12 +981,17 @@ function BOMCreator({ apiUrl, isConnected }) {
   // Import uploaded BOM
   const importUploadedBOM = () => {
     if (!uploadPreview) return;
+    if (uploadPreview.hasErrors) {
+      alert('Please fix critical errors before importing. Add missing materials to Taxonomy Library first.');
+      return;
+    }
     
     setProductName(uploadPreview.productName);
     setComponents(uploadPreview.components);
     setActiveTab('manual');
     setUploadPreview(null);
     setUploadFile(null);
+    setValidationErrors([]);
   };
 
   // ============================================
@@ -1117,6 +1205,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setSimilarMatches({});
     setUploadPreview(null);
     setUploadFile(null);
+    setValidationErrors([]);
   };
 
   // Get part name suggestions
@@ -1248,19 +1337,19 @@ function BOMCreator({ apiUrl, isConnected }) {
         <div className="tab-buttons">
           <button
             className={`btn ${activeTab === 'manual' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('manual')}
+            onClick={() => { setActiveTab('manual'); setResult(null); }}
           >
             <FileText size={16} /> Manual Entry
           </button>
           <button
             className={`btn ${activeTab === 'upload' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('upload')}
+            onClick={() => { setActiveTab('upload'); setResult(null); }}
           >
             <Upload size={16} /> Upload Excel
           </button>
           <button
             className={`btn ${activeTab === 'clone' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('clone')}
+            onClick={() => { setActiveTab('clone'); setResult(null); }}
           >
             <Copy size={16} /> Clone Product
           </button>
@@ -1377,11 +1466,58 @@ function BOMCreator({ apiUrl, isConnected }) {
             </label>
           </div>
           
-          {uploadPreview && (
+         {uploadPreview && (
             <div style={{ background: '#f8f9fa', padding: '16px', borderRadius: '8px', marginTop: '16px' }}>
               <h4 style={{ marginTop: 0 }}>Preview: {uploadPreview.fileName}</h4>
               <p>Product Name: <strong>{uploadPreview.productName}</strong></p>
               <p>Components Found: <strong>{uploadPreview.componentCount}</strong></p>
+              
+              {/* Validation Errors */}
+              {validationErrors.length > 0 && (
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                  {validationErrors.map((error, idx) => (
+                    <div 
+                      key={idx} 
+                      style={{ 
+                        padding: '12px 16px', 
+                        borderRadius: '8px',
+                        marginBottom: '8px',
+                        background: error.severity === 'critical' ? '#f8d7da' : '#fff3cd',
+                        border: error.severity === 'critical' ? '1px solid #f5c6cb' : '1px solid #ffeeba'
+                      }}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '8px',
+                        marginBottom: '8px'
+                      }}>
+                        <AlertTriangle size={18} color={error.severity === 'critical' ? '#721c24' : '#856404'} />
+                        <strong style={{ color: error.severity === 'critical' ? '#721c24' : '#856404' }}>
+                          {error.severity === 'critical' ? '🚫 BLOCKING:' : '⚠️ WARNING:'} Unknown {error.type}
+                        </strong>
+                      </div>
+                      <p style={{ 
+                        margin: '0 0 8px 0', 
+                        fontSize: '14px',
+                        color: error.severity === 'critical' ? '#721c24' : '#856404'
+                      }}>
+                        {error.message}
+                      </p>
+                      <div style={{ 
+                        fontSize: '12px', 
+                        color: '#666',
+                        background: 'rgba(255,255,255,0.5)',
+                        padding: '8px',
+                        borderRadius: '4px'
+                      }}>
+                        <strong>How to fix:</strong> Go to <code style={{ background: '#e9ecef', padding: '2px 6px', borderRadius: '3px' }}>{error.location}</code> and add: 
+                        <span style={{ fontWeight: '600', marginLeft: '4px' }}>{error.items.join(', ')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               
               <div className="preview-table" style={{ marginTop: '12px' }}>
                 <table className="data-table" style={{ fontSize: '11px' }}>
@@ -1404,7 +1540,10 @@ function BOMCreator({ apiUrl, isConnected }) {
                     {uploadPreview.components.slice(0, 10).map((comp, idx) => (
                       <tr key={idx}>
                         <td>{comp.mainComponent}</td>
-                        <td>{comp.subComponent}</td>
+                        <td style={{ 
+                          background: validationErrors.some(e => e.type === 'Sub Component' && e.items.includes(comp.subComponent?.toUpperCase())) 
+                            ? '#f8d7da' : 'transparent'
+                        }}>{comp.subComponent}</td>
                         <td>{comp.partName}</td>
                         <td>{comp.profile}</td>
                         <td>{comp.length}</td>
@@ -1421,12 +1560,18 @@ function BOMCreator({ apiUrl, isConnected }) {
               </div>
               
               <div style={{ marginTop: '16px', display: 'flex', gap: '12px' }}>
-                <button className="btn btn-primary" onClick={importUploadedBOM}>
-                  Import & Edit
+                <button 
+                  className="btn btn-primary" 
+                  onClick={importUploadedBOM}
+                  disabled={uploadPreview.hasErrors}
+                  title={uploadPreview.hasErrors ? 'Fix critical errors before importing' : 'Import BOM'}
+                >
+                  {uploadPreview.hasErrors ? '🚫 Fix Errors First' : 'Import & Edit'}
                 </button>
                 <button className="btn btn-secondary" onClick={() => {
                   setUploadPreview(null);
                   setUploadFile(null);
+                  setValidationErrors([]);
                 }}>
                   Cancel
                 </button>
