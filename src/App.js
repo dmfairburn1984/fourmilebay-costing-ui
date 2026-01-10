@@ -523,7 +523,7 @@ function BOMCreator({ apiUrl, isConnected }) {
     setLoading(true);
     try {
       const [profilesRes, mainCompRes, partNamesRes, hardwareRes, fabricRes, taxonomyRes] = await Promise.all([
-        fetch(`${apiUrl}?action=getProfiles`).then(r => r.json()).catch(() => ({ success: false })),
+        fetch(`${apiUrl}?action=getAllProfiles`).then(r => r.json()).catch(() => ({ success: false })),
         fetch(`${apiUrl}?action=getMainComponents`).then(r => r.json()).catch(() => ({ success: false })),
         fetch(`${apiUrl}?action=getPartNamesByType`).then(r => r.json()).catch(() => ({ success: false })),
         fetch(`${apiUrl}?action=getHardwareLibrary`).then(r => r.json()).catch(() => ({ success: false })),
@@ -534,9 +534,10 @@ function BOMCreator({ apiUrl, isConnected }) {
    // Load profiles from single source of truth (Profile_Registry)
       const allProfilesRes = await fetch(`${apiUrl}?action=getAllProfiles`).then(r => r.json()).catch(() => ({ success: false }));
 
-      if (allProfilesRes.success && allProfilesRes.dropdownOptions) {
+      // Load profiles from single source of truth (Profile_Registry)
+      if (profilesRes.success && profilesRes.dropdownOptions) {
         // Only show PRODUCED and REVIEW profiles in dropdown (not NEW - they need tooling)
-        const availableProfiles = allProfilesRes.dropdownOptions
+        const availableProfiles = profilesRes.dropdownOptions
           .filter(p => p.status === 'PRODUCED' || p.status === 'REVIEW')
           .map(p => ({
             value: p.value,
@@ -546,7 +547,7 @@ function BOMCreator({ apiUrl, isConnected }) {
           }));
         
         setAllProfiles(availableProfiles);
-        setProfiles(allProfilesRes.profiles || []);
+        setProfiles(profilesRes.profiles || []);
       } else {
         setAllProfiles(defaultProfileOptions);
       }
