@@ -534,17 +534,38 @@ function BOMCreator({ apiUrl, isConnected }) {
    // Load profiles from single source of truth (Profile_Registry)
       const allProfilesRes = await fetch(`${apiUrl}?action=getAllProfiles`).then(r => r.json()).catch(() => ({ success: false }));
 
-      // Load profiles from single source of truth (Profile_Registry)
+   // Load profiles from single source of truth (Profile_Registry)
       if (profilesRes.success && profilesRes.dropdownOptions) {
-        // Only show PRODUCED and REVIEW profiles in dropdown (not NEW - they need tooling)
-        const availableProfiles = profilesRes.dropdownOptions
-          .filter(p => p.status === 'PRODUCED' || p.status === 'REVIEW')
-          .map(p => ({
+        // Show ALL profiles in dropdown, but format label to indicate status
+        const availableProfiles = profilesRes.dropdownOptions.map(p => {
+          // Format label based on profile type
+          let label = '';
+          if (p.type === 'ROUND') {
+            label = `Ø${p.width}x${p.thickness}`;
+          } else if (p.type === 'PLATE') {
+            label = `PLATE ${p.thickness}mm`;
+          } else if (p.type === 'FLATBAR') {
+            label = `${p.width}x${p.height} FLAT`;
+          } else {
+            // RECTANGULAR, SQUARE, CUSTOM
+            label = `${p.width}x${p.height}x${p.thickness}`;
+          }
+          
+          // Add status indicator for non-PRODUCED profiles
+          if (p.status === 'NEW') {
+            label += ' ⚠️ NEW';
+          } else if (p.status === 'REVIEW') {
+            label += ' 🔍';
+          }
+          
+          return {
             value: p.value,
-            label: `${p.type === 'ROUND' ? 'Ø' + p.width : p.width + 'x' + p.height}x${p.thickness}`,
+            label: label,
             type: p.type,
-            status: p.status
-          }));
+            status: p.status,
+            thickness: p.thickness
+          };
+        });
         
         setAllProfiles(availableProfiles);
         setProfiles(profilesRes.profiles || []);
@@ -2776,6 +2797,13 @@ function TaxonomyLibrary({ apiUrl, isConnected }) {
         status: newProfile.status,
         notes: newProfile.notes
       };
+
+      if (newProfile.type === 'RECTANGULAR' && newProfile.width && newProfile.height && 
+          parseFloat(newProfile.width) === parseFloat(newProfile.height)) {
+        setProfileError('Width and Height are equal - this should be SQUARE, not RECTANGULAR. Please select SQUARE shape.');
+        setAddingProfile(false);
+        return;
+      }
       
       // Client-side validation
       if (newProfile.type === 'ROUND') {
